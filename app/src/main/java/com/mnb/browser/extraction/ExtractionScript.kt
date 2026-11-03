@@ -26,7 +26,15 @@ object ExtractionScript {
     var NOISE = /[\s_-](nav|navbar|navigation|menu|sidebar|advert|advertisement|ad|ads|adsbygoogle|banner|sponsor|sponsored|promo|comment|comments|share|sharing|social|breadcrumb|breadcrumbs|footer|header|popup|modal|cookie|cookies|related|recommend|recommended|pagination|toolbar|widget|btn|button|buttons)[\s_-]/i;
     var ROLE_NOISE = { navigation: 1, banner: 1, contentinfo: 1, complementary: 1, button: 1, menu: 1, menubar: 1, dialog: 1, alertdialog: 1 };
 
-    function normalize(s) { return s.replace(/[ \t\r\n\f\u00a0]+/g, ' ').trim(); }
+    var JOINERS_NEEDED = /[\u0600-\u0DFF\u1000-\u109F\u1780-\u17FF\u2190-\u27BF\ud800-\udfff\ufe0f]/;
+    // Sites sometimes inject invisible characters; drop them, but keep joiners that sit next to
+    // scripts or emoji that need them.
+    function stripInvisible(s) {
+      return s.replace(/[\u200b\u2060\ufeff\u00ad]/g, '').replace(/([\s\S]?)[\u200c\u200d]+([\s\S]?)/g, function (m, a, b) {
+        return (JOINERS_NEEDED.test(a) || JOINERS_NEEDED.test(b)) ? m : a + b;
+      });
+    }
+    function normalize(s) { return stripInvisible(s).replace(/[ \t\r\n\f\u00a0]+/g, ' ').trim(); }
 
     function isHidden(el) {
       if (el.hidden || el.getAttribute('aria-hidden') === 'true') return true;
@@ -64,26 +72,37 @@ object ExtractionScript {
       return false;
     }
 
-    // 1. Pick the container that holds the most paragraph text.
-    var scores = new Map();
-    function bump(el, amount) { if (el) scores.set(el, (scores.get(el) || 0) + amount); }
-    var ps = document.querySelectorAll('p, div, td, section, article');
-    for (var i = 0; i < ps.length; i++) {
-      var el = ps[i];
+    // 1. Pick the smallest element that holds most of the page's paragraph text. Each text
+    //    block adds its length to all of its ancestors, so sites that wrap every paragraph in
+    //    its own box still resolve to the shared parent.
+    var blocks = [];
+    var total = 0;
+    var cand = document.querySelectorAll('p, div, td, section, article, li');
+    for (var i = 0; i < cand.length; i++) {
+      var el = cand[i];
       var own = 0;
       if (el.tagName === 'P') {
         own = normalize(el.textContent || '').length;
-        if (own > 0) { bump(el.parentElement, own); bump(el.parentElement && el.parentElement.parentElement, own / 2); }
       } else {
         for (var c = el.firstChild; c; c = c.nextSibling) {
           if (c.nodeType === 3) own += normalize(c.nodeValue).length;
         }
-        if (own > 40) bump(el, own);
+        if (own <= 40) own = 0;
+      }
+      if (own > 0 && !insideSkipped(el)) { blocks.push({ el: el, own: own }); total += own; }
+    }
+    var scores = new Map();
+    for (var bi0 = 0; bi0 < blocks.length; bi0++) {
+      for (var nd = blocks[bi0].el; nd && nd !== document.documentElement; nd = nd.parentElement) {
+        scores.set(nd, (scores.get(nd) || 0) + blocks[bi0].own);
       }
     }
-    var best = null, bestScore = 0;
-    scores.forEach(function (score, el) {
-      if (score > bestScore && !insideSkipped(el)) { best = el; bestScore = score; }
+    var best = null, bestDepth = -1;
+    scores.forEach(function (score, node) {
+      if (node === document.body || score < total * 0.6) return;
+      var depth = 0;
+      for (var q = node.parentElement; q; q = q.parentElement) depth++;
+      if (depth > bestDepth) { best = node; bestDepth = depth; }
     });
     var container = best || document.body;
 
