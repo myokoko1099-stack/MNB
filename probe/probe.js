@@ -112,6 +112,6 @@ const STRUCTURE = function () {
     if (browser) await browser.close();
   }
   fs.mkdirSync('probe-results', { recursive: true });
-  fs.writeFileSync('probe-results/result.json', JSON.stringify(result, null, 2));
+  fs.writeFileSync(process.env.PROBE_OUT || 'probe-results/result.json', JSON.stringify(result, null, 2));
   console.log(JSON.stringify(result, null, 2));
 })();

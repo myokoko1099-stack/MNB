@@ -17,10 +17,18 @@ jobs:
         with: { node-version: 20 }
       - run: npm install --no-save playwright@1.47.2
       - run: npx playwright install --with-deps chromium
-      - run: node probe/probe.js
+      - name: Probe noveldex
+        run: node probe/probe.js
         continue-on-error: true
         env:
           PROBE_URL: https://noveldex.io/series/novel/my-girlfriend-is-already-fully-trained/chapter/2
+          PROBE_OUT: probe-results/result.json
+      - name: Probe novelpia
+        run: node probe/probe.js
+        continue-on-error: true
+        env:
+          PROBE_URL: https://global.novelpia.com/viewer/712724
+          PROBE_OUT: probe-results/novelpia.json
       - name: Commit results
         if: always()
         run: |
