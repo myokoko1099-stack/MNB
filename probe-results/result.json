@@ -1,0 +1,169 @@
+{
+  "url": "https://noveldex.io/series/novel/my-girlfriend-is-already-fully-trained/chapter/2",
+  "startedAt": "2026-11-03T07:15:38.989Z",
+  "status": 200,
+  "title": "Chapter 2: Chapter 2 - My Girlfriend Is Already Fully Trained | NovelDex",
+  "extractBeforeScroll": {
+    "chapterTitle": "",
+    "paragraphCount": 1,
+    "totalChars": 200,
+    "firstLengths": [
+      200
+    ]
+  },
+  "perScrollStep": [
+    {
+      "step": 8,
+      "paragraphCount": 1
+    },
+    {
+      "step": 16,
+      "paragraphCount": 1
+    },
+    {
+      "step": 24,
+      "paragraphCount": 1
+    },
+    {
+      "step": 32,
+      "paragraphCount": 1
+    },
+    {
+      "step": 40,
+      "paragraphCount": 1
+    }
+  ],
+  "extractAfterScroll": {
+    "chapterTitle": "",
+    "paragraphCount": 1,
+    "totalChars": 200,
+    "firstLengths": [
+      200
+    ]
+  },
+  "structure": {
+    "bodyTextLength": 10042,
+    "pCount": 147,
+    "iframes": 0,
+    "canvases": 0,
+    "shadowRoots": 1,
+    "flags": {
+      "log in": false,
+      "login": false,
+      "sign in": true,
+      "unlock": false,
+      "captcha": false,
+      "just a moment": false,
+      "verify you are human": false,
+      "premium": false,
+      "subscribe": false,
+      "locked": false
+    },
+    "textBlockCount": 65,
+    "textBlocks": [
+      {
+        "own": 3730,
+        "chain": "script < body.__variable_ef23df.__variable_8c7573.__variable_fa6dd5.__variable_09f4a9 < html.dark"
+      },
+      {
+        "own": 61,
+        "chain": "script < body.__variable_ef23df.__variable_8c7573.__variable_fa6dd5.__variable_09f4a9 < html.dark"
+      },
+      {
+        "own": 649,
+        "chain": "script < body.__variable_ef23df.__variable_8c7573.__variable_fa6dd5.__variable_09f4a9 < html.dark"
+      },
+      {
+        "own": 1346,
+        "chain": "script < body.__variable_ef23df.__variable_8c7573.__variable_fa6dd5.__variable_09f4a9 < html.dark"
+      },
+      {
+        "own": 1396,
+        "chain": "script < body.__variable_ef23df.__variable_8c7573.__variable_fa6dd5.__variable_09f4a9 < html.dark"
+      },
+      {
+        "own": 106,
+        "chain": "noscript < body.__variable_ef23df.__variable_8c7573.__variable_fa6dd5.__variable_09f4a9 < html.dark"
+      },
+      {
+        "own": 463,
+        "chain": "script < body.__variable_ef23df.__variable_8c7573.__variable_fa6dd5.__variable_09f4a9 < html.dark"
+      },
+      {
+        "own": 1701,
+        "chain": "noscript < body.__variable_ef23df.__variable_8c7573.__variable_fa6dd5.__variable_09f4a9 < html.dark"
+      },
+      {
+        "own": 457,
+        "chain": "script < div.protected-content < main#main-content.flex-1.overflow-x-clip.border-0.outline-none < body.__variable_ef23df.__variable_8c7573.__variable_fa6dd5.__variable_09f4a9 < html.dark"
+      },
+      {
+        "own": 134,
+        "chain": "div < div.prose.prose-sm.sm:prose-base.md:prose-lg < div.relative.group.cursor-pointer.transition-[color,background-color,box-shadow] < div.relative < div.overflow-visible < div.max-w-4xl.mx-auto.px-4.sm:px-6"
+      }
+    ],
+    "firstBlockParentChildCount": 122,
+    "firstBlockParentChildren": [
+      {
+        "d": "div",
+        "textLen": 0,
+        "hidden": true
+      },
+      {
+        "d": "div",
+        "textLen": 0,
+        "hidden": false
+      },
+      {
+        "d": "script",
+        "textLen": 3730,
+        "hidden": true
+      },
+      {
+        "d": "script",
+        "textLen": 61,
+        "hidden": true
+      },
+      {
+        "d": "script",
+        "textLen": 649,
+        "hidden": true
+      },
+      {
+        "d": "script",
+        "textLen": 1346,
+        "hidden": true
+      },
+      {
+        "d": "script",
+        "textLen": 1396,
+        "hidden": true
+      },
+      {
+        "d": "noscript",
+        "textLen": 106,
+        "hidden": false
+      },
+      {
+        "d": "script",
+        "textLen": 463,
+        "hidden": true
+      },
+      {
+        "d": "noscript",
+        "textLen": 1701,
+        "hidden": false
+      },
+      {
+        "d": "a.sr-only.focus:not-sr-only.focus:fixed.focus:z-(--z-critical)",
+        "textLen": 15,
+        "hidden": false
+      },
+      {
+        "d": "div.reader-site-header.sticky.top-0.z-(--z-header)",
+        "textLen": 0,
+        "hidden": false
+      }
+    ]
+  }
+}
