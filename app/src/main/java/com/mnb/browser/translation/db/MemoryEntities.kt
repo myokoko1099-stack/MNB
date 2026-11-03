@@ -74,8 +74,8 @@ data class MemoryGlossaryEntity(
     tableName = "memory_relationships",
     foreignKeys = [
         ForeignKey(NovelEntity::class, ["novelId"], ["novelId"], onDelete = ForeignKey.CASCADE),
-        ForeignKey(MemoryCharacterEntity::class, ["fromCharacterId"], ["characterId"], onDelete = ForeignKey.CASCADE),
-        ForeignKey(MemoryCharacterEntity::class, ["toCharacterId"], ["characterId"], onDelete = ForeignKey.CASCADE),
+        ForeignKey(MemoryCharacterEntity::class, ["characterId"], ["fromCharacterId"], onDelete = ForeignKey.CASCADE),
+        ForeignKey(MemoryCharacterEntity::class, ["characterId"], ["toCharacterId"], onDelete = ForeignKey.CASCADE),
     ],
     indices = [Index("novelId"), Index("fromCharacterId"), Index("toCharacterId")],
 )
