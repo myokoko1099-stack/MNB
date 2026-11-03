@@ -50,134 +50,148 @@ import com.mnb.browser.extraction.ExtractionController
 import com.mnb.browser.extraction.ExtractionState
 import com.mnb.browser.extraction.ExtractionStateManager
 import com.mnb.browser.navigation.NavigationController
+import com.mnb.browser.reader.ReaderPositionRepository
+import com.mnb.browser.reader.ReaderStateManager
 import com.mnb.browser.state.BrowserError
 import com.mnb.browser.state.BrowserStateManager
 import com.mnb.browser.web.WebViewController
 
 @Composable
 fun BrowserScreen(
-stateManager: BrowserStateManager,
-webController: WebViewController,
-navigation: NavigationController,
-extraction: ExtractionController,
-extractionState: ExtractionStateManager,
+    stateManager: BrowserStateManager,
+    webController: WebViewController,
+    navigation: NavigationController,
+    extraction: ExtractionController,
+    extractionState: ExtractionStateManager,
+    readerState: ReaderStateManager,
+    readerPositions: ReaderPositionRepository,
 ) {
-val state = stateManager.state
-val extractionUi = extractionState.state
-val focus = LocalFocusManager.current
-var input by rememberSaveable { mutableStateOf("") }
-LaunchedEffect(state.currentUrl) { input = state.currentUrl }
+    val state = stateManager.state
+    val extractionUi = extractionState.state
+    val readerContent = readerState.content
+    val focus = LocalFocusManager.current
+    var input by rememberSaveable { mutableStateOf("") }
+    LaunchedEffect(state.currentUrl) { input = state.currentUrl }
 
-BackHandler(enabled = state.canGoBack) { navigation.back() }
-// Registered after the one above, so it wins while the preview is open.
-BackHandler(enabled = extractionUi !is ExtractionState.Idle) { extraction.close() }
+    BackHandler(enabled = state.canGoBack) { navigation.back() }
+    // Registered after the one above, so it wins while the preview is open.
+    BackHandler(enabled = extractionUi !is ExtractionState.Idle) { extraction.close() }
+    // Registered last, so it wins while the reader is open and returns to the preview.
+    BackHandler(enabled = readerContent != null) { readerState.close() }
 
-fun go() {
-    focus.clearFocus()
-    navigation.submit(input)
-}
+    fun go() {
+        focus.clearFocus()
+        navigation.submit(input)
+    }
 
-Scaffold(
-    topBar = {
-        Surface(tonalElevation = 3.dp) {
-            Column(Modifier.fillMaxWidth()) {
-                Text(
-                    text = state.title.ifBlank { "MNB" },
-                    style = MaterialTheme.typography.labelLarge,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp),
-                )
-                Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    OutlinedTextField(
-                        value = input,
-                        onValueChange = { input = it },
-                        singleLine = true,
-                        placeholder = { Text("Search or enter address") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Go),
-                        keyboardActions = KeyboardActions(onGo = { go() }),
-                        modifier = Modifier.weight(1f),
+    Scaffold(
+        topBar = {
+            Surface(tonalElevation = 3.dp) {
+                Column(Modifier.fillMaxWidth()) {
+                    Text(
+                        text = state.title.ifBlank { "MNB" },
+                        style = MaterialTheme.typography.labelLarge,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp),
                     )
-                    IconButton(onClick = { go() }) {
-                        Icon(Icons.Default.Search, contentDescription = "Go")
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        OutlinedTextField(
+                            value = input,
+                            onValueChange = { input = it },
+                            singleLine = true,
+                            placeholder = { Text("Search or enter address") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Go),
+                            keyboardActions = KeyboardActions(onGo = { go() }),
+                            modifier = Modifier.weight(1f),
+                        )
+                        IconButton(onClick = { go() }) {
+                            Icon(Icons.Default.Search, contentDescription = "Go")
+                        }
+                    }
+                    if (state.isLoading) {
+                        LinearProgressIndicator(
+                            progress = { state.progress / 100f },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    } else {
+                        Box(Modifier.size(width = 0.dp, height = 4.dp))
                     }
                 }
-                if (state.isLoading) {
-                    LinearProgressIndicator(
-                        progress = { state.progress / 100f },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                } else {
-                    Box(Modifier.size(width = 0.dp, height = 4.dp))
-                }
             }
-        }
-    },
-    bottomBar = {
-        NavigationBar {
-            NavigationBarItem(
-                selected = false, enabled = state.canGoBack, onClick = { navigation.back() },
-                icon = { Icon(Icons.Default.ArrowBack, null) }, label = { Text("Back") },
+        },
+        bottomBar = {
+            NavigationBar {
+                NavigationBarItem(
+                    selected = false, enabled = state.canGoBack, onClick = { navigation.back() },
+                    icon = { Icon(Icons.Default.ArrowBack, null) }, label = { Text("Back") },
+                )
+                NavigationBarItem(
+                    selected = false, enabled = state.canGoForward, onClick = { navigation.forward() },
+                    icon = { Icon(Icons.Default.ArrowForward, null) }, label = { Text("Forward") },
+                )
+                NavigationBarItem(
+                    selected = false, onClick = { navigation.home() },
+                    icon = { Icon(Icons.Default.Home, null) }, label = { Text("Home") },
+                )
+                NavigationBarItem(
+                    selected = false, onClick = { navigation.refresh() },
+                    icon = { Icon(Icons.Default.Refresh, null) }, label = { Text("Refresh") },
+                )
+                NavigationBarItem(
+                    selected = false,
+                    enabled = state.currentUrl.isNotBlank() && !state.isLoading && state.error == null,
+                    onClick = { extraction.extract() },
+                    icon = { Icon(Icons.Default.List, null) }, label = { Text("Extract") },
+                )
+            }
+        },
+    ) { padding ->
+        Box(Modifier.padding(padding).fillMaxSize()) {
+            AndroidView(
+                factory = { ctx -> webController.createWebView(ctx) },
+                modifier = Modifier.fillMaxSize(),
             )
-            NavigationBarItem(
-                selected = false, enabled = state.canGoForward, onClick = { navigation.forward() },
-                icon = { Icon(Icons.Default.ArrowForward, null) }, label = { Text("Forward") },
-            )
-            NavigationBarItem(
-                selected = false, onClick = { navigation.home() },
-                icon = { Icon(Icons.Default.Home, null) }, label = { Text("Home") },
-            )
-            NavigationBarItem(
-                selected = false, onClick = { navigation.refresh() },
-                icon = { Icon(Icons.Default.Refresh, null) }, label = { Text("Refresh") },
-            )
-            NavigationBarItem(
-                selected = false,
-                enabled = state.currentUrl.isNotBlank() && !state.isLoading && state.error == null,
-                onClick = { extraction.extract() },
-                icon = { Icon(Icons.Default.List, null) }, label = { Text("Extract") },
-            )
-        }
-    },
-) { padding ->
-    Box(Modifier.padding(padding).fillMaxSize()) {
-        AndroidView(
-            factory = { ctx -> webController.createWebView(ctx) },
-            modifier = Modifier.fillMaxSize(),
-        )
-        state.error?.let { error ->
-            ErrorOverlay(error, onRetry = { navigation.refresh() }, onDismiss = { navigation.dismissError() })
-        }
-        if (extractionUi !is ExtractionState.Idle) {
-            ExtractionPreviewScreen(
-                state = extractionUi,
-                onClose = { extraction.close() },
-                onRetry = { extraction.extract() },
-            )
+            state.error?.let { error ->
+                ErrorOverlay(error, onRetry = { navigation.refresh() }, onDismiss = { navigation.dismissError() })
+            }
+            if (extractionUi !is ExtractionState.Idle) {
+                ExtractionPreviewScreen(
+                    state = extractionUi,
+                    onClose = { extraction.close() },
+                    onRetry = { extraction.extract() },
+                    onRead = { readerState.open(it) },
+                )
+            }
+            if (readerContent != null) {
+                ReaderScreen(
+                    content = readerContent,
+                    positions = readerPositions,
+                    onClose = { readerState.close() },
+                )
+            }
         }
     }
 }
 
-}
-
 @Composable
 private fun ErrorOverlay(error: BrowserError, onRetry: () -> Unit, onDismiss: () -> Unit) {
-Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-Column(
-Modifier.fillMaxSize().padding(32.dp),
-horizontalAlignment = Alignment.CenterHorizontally,
-verticalArrangement = Arrangement.Center,
-) {
-Icon(Icons.Default.Warning, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(48.dp))
-Text(error.title, style = MaterialTheme.typography.titleLarge, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 16.dp))
-Text(error.message, style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center, modifier = Modifier.padding(vertical = 12.dp))
-Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-OutlinedButton(onClick = onDismiss) { Text("Dismiss") }
-if (error.failingUrl != null) Button(onClick = onRetry) { Text("Retry") }
-}
-}
-}
+    Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+        Column(
+            Modifier.fillMaxSize().padding(32.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Icon(Icons.Default.Warning, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(48.dp))
+            Text(error.title, style = MaterialTheme.typography.titleLarge, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 16.dp))
+            Text(error.message, style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center, modifier = Modifier.padding(vertical = 12.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedButton(onClick = onDismiss) { Text("Dismiss") }
+                if (error.failingUrl != null) Button(onClick = onRetry) { Text("Retry") }
+            }
+        }
+    }
 }
