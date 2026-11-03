@@ -78,7 +78,7 @@ object ExtractionScript {
         for (var c = el.firstChild; c; c = c.nextSibling) {
           if (c.nodeType === 3) own += normalize(c.nodeValue).length;
         }
-        if (own > 40) bump(el, own);
+        if (own > 40) { bump(el, own); bump(el.parentElement, own); }
       }
     }
     var best = null, bestScore = 0;
