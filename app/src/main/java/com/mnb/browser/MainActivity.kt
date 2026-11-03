@@ -11,6 +11,7 @@ import com.mnb.browser.extraction.ExtractionController
 import com.mnb.browser.extraction.ExtractionStateManager
 import com.mnb.browser.navigation.NavigationController
 import com.mnb.browser.reader.ReaderPositionRepository
+import com.mnb.browser.reader.ReaderSettingsRepository
 import com.mnb.browser.reader.ReaderStateManager
 import com.mnb.browser.reader.SharedPreferencesKeyValueStore
 import com.mnb.browser.state.BrowserStateManager
@@ -34,6 +35,9 @@ class MainActivity : ComponentActivity() {
     private val readerPositions by lazy {
         ReaderPositionRepository(SharedPreferencesKeyValueStore(applicationContext))
     }
+    private val readerSettings by lazy {
+        ReaderSettingsRepository(SharedPreferencesKeyValueStore(applicationContext))
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -41,7 +45,7 @@ class MainActivity : ComponentActivity() {
             MaterialTheme(colorScheme = if (isSystemInDarkTheme()) darkColorScheme() else lightColorScheme()) {
                 BrowserScreen(
                     stateManager, webController, navigation, extraction, extractionState,
-                    readerState, readerPositions,
+                    readerState, readerPositions, readerSettings,
                 )
             }
         }
