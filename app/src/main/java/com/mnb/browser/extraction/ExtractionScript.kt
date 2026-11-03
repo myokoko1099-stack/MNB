@@ -26,7 +26,15 @@ object ExtractionScript {
     var NOISE = /[\s_-](nav|navbar|navigation|menu|sidebar|advert|advertisement|ad|ads|adsbygoogle|banner|sponsor|sponsored|promo|comment|comments|share|sharing|social|breadcrumb|breadcrumbs|footer|header|popup|modal|cookie|cookies|related|recommend|recommended|pagination|toolbar|widget|btn|button|buttons)[\s_-]/i;
     var ROLE_NOISE = { navigation: 1, banner: 1, contentinfo: 1, complementary: 1, button: 1, menu: 1, menubar: 1, dialog: 1, alertdialog: 1 };
 
-    function normalize(s) { return s.replace(/[ \t\r\n\f\u00a0]+/g, ' ').trim(); }
+    var JOINERS_NEEDED = /[\u0600-\u0DFF\u1000-\u109F\u1780-\u17FF\u2190-\u27BF\ud800-\udfff\ufe0f]/;
+    // Sites sometimes inject invisible characters; drop them, but keep joiners that sit next to
+    // scripts or emoji that need them.
+    function stripInvisible(s) {
+      return s.replace(/[\u200b\u2060\ufeff\u00ad]/g, '').replace(/([\s\S]?)[\u200c\u200d]+([\s\S]?)/g, function (m, a, b) {
+        return (JOINERS_NEEDED.test(a) || JOINERS_NEEDED.test(b)) ? m : a + b;
+      });
+    }
+    function normalize(s) { return stripInvisible(s).replace(/[ \t\r\n\f\u00a0]+/g, ' ').trim(); }
 
     function isHidden(el) {
       if (el.hidden || el.getAttribute('aria-hidden') === 'true') return true;
