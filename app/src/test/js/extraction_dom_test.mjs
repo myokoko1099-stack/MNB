@@ -66,6 +66,16 @@ const BOOK_H1 = `<!doctype html><html><head><title>Site</title></head><body>
 const NO_TITLE = `<!doctype html><html><head><title>Site</title></head><body>
 <div class="c"><p>Chapter 12 - Return</p><p>First long paragraph of the story which is certainly long enough to count here.</p></div></body></html>`;
 
+const BARE_LABEL_A = `<!doctype html><html><head><title>Book</title></head><body><div class="c">
+<div style="display:block">Chapter 1</div><div>Chapter 1: Prologue</div><div>Part 0: Prologue</div>
+<p>This was definitely not a game. Of course, it wasn't a dream, either, was it?</p></div></body></html>`;
+const BARE_LABEL_B = `<!doctype html><html><head><title>Book</title></head><body><div class="c">
+<span style="display:block">Chapter 1</span><span style="display:block">Nightmare Begins</span>
+<p>A frail-looking young man with pale skin and dark circles under his eyes sat there.</p></div></body></html>`;
+
+const SHORT_TITLE = `<!doctype html><html><head><title>Book</title></head><body><div class="c">
+<p>Chapter 5 Gate</p><p>Yes, he said quietly, and it was enough for them both to leave at once.</p></div></body></html>`;
+
 const browser = await chromium.launch();
 const results = [];
 async function run(name, html, check) {
@@ -124,6 +134,17 @@ await run('chapter title prefers .chapter-title over a bare h1', BOOK_H1, r => {
 });
 await run('chapter title falls back to a leading "Chapter N" line', NO_TITLE, r => {
   assert.equal(r.chapterTitle, 'Chapter 12 - Return');
+});
+
+await run('bare "Chapter 1" is completed by the following line that repeats it', BARE_LABEL_A, r => {
+  assert.equal(r.chapterTitle, 'Chapter 1: Prologue');
+});
+await run('bare "Chapter 1" is joined with a following title line', BARE_LABEL_B, r => {
+  assert.equal(r.chapterTitle, 'Chapter 1 Nightmare Begins');
+});
+
+await run('a full short title like "Chapter 5 Gate" is not extended', SHORT_TITLE, r => {
+  assert.equal(r.chapterTitle, 'Chapter 5 Gate');
 });
 
 await browser.close();

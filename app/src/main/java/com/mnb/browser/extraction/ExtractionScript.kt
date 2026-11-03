@@ -142,6 +142,18 @@ object ExtractionScript {
       for (var oi = 0; oi < out.length && oi < 5; oi++) { if (CH.test(out[oi].t)) { chapterTitle = out[oi].t; break; } }
     }
 
+    // A bare label such as "Chapter 1" is completed with the short line that follows it.
+    var BARE = /^(chapter|ch\.?|episode|ep\.?|အခန်း)\s*[0-9၀-၉]+/i;
+    if (BARE.test(chapterTitle) && chapterTitle.replace(BARE, '') === '') {
+      for (var bi = 0; bi < out.length - 1 && bi < 5; bi++) {
+        if (out[bi].t === chapterTitle) {
+          var nt = out[bi + 1].t;
+          if (nt.length < 100) chapterTitle = nt.indexOf(chapterTitle) === 0 ? nt : chapterTitle + ' ' + nt;
+          break;
+        }
+      }
+    }
+
     return {
       pageTitle: normalize(document.title || ''),
       chapterTitle: chapterTitle,
