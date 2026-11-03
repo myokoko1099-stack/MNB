@@ -11,9 +11,9 @@ import org.junit.Test
 import org.robolectric.RuntimeEnvironment
 
 class MnbDatabaseTest : DbTestBase() {
-    @Test fun databaseIsCreatedAtVersionOne() {
+    @Test fun databaseIsCreatedAtTheCurrentVersion() {
         assertTrue(db.openHelper.writableDatabase.isOpen)
-        assertEquals(1, db.openHelper.readableDatabase.version)
+        assertEquals(2, db.openHelper.readableDatabase.version)
         assertEquals(MnbMigrations.CURRENT_VERSION, db.openHelper.readableDatabase.version)
     }
 
