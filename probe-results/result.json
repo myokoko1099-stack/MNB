@@ -1,12 +1,12 @@
 {
   "url": "https://noveldex.io/series/novel/my-girlfriend-is-already-fully-trained/chapter/2",
-  "startedAt": "2026-11-03T07:19:12.448Z",
+  "startedAt": "2026-11-03T07:21:52.217Z",
   "status": 200,
   "title": "Chapter 2: Chapter 2 - My Girlfriend Is Already Fully Trained | NovelDex",
   "extractBeforeScroll": {
     "chapterTitle": "",
     "paragraphCount": 219,
-    "totalChars": 8896,
+    "totalChars": 8672,
     "firstLengths": [
       12,
       54,
@@ -17,15 +17,26 @@
       124,
       80
     ],
+    "head": [
+      "— Jeong Su-a",
+      "\"I ate 'em all. Just brought the leftove",
+      "Wow fuck jackpot. Holy fucking shit fuck",
+      "Was Ha-young's KakaoTalk hacked or somet",
+      "But that guilt was nothing compared to t"
+    ],
+    "tail": [
+      "Yup lmao Bring me a pack too when you co",
+      "— Lee Ha-young",
+      "Ha-young's crying face as the thumbnail.",
+      "After my date with my girlfriend, I got ",
+      "With his disgusting mug as the profile p"
+    ],
+    "shortCount": 67,
     "oddChars": {
       "U+2014": 43,
       "U+2665": 4,
       "U+25C7": 12,
       "U+25C6": 2,
-      "U+200D": 48,
-      "U+200C": 80,
-      "U+2060": 44,
-      "U+200B": 52,
       "U+1F4AC": 1
     }
   },
@@ -54,7 +65,7 @@
   "extractAfterScroll": {
     "chapterTitle": "",
     "paragraphCount": 219,
-    "totalChars": 8896,
+    "totalChars": 8672,
     "firstLengths": [
       12,
       54,
@@ -65,15 +76,26 @@
       124,
       80
     ],
+    "head": [
+      "— Jeong Su-a",
+      "\"I ate 'em all. Just brought the leftove",
+      "Wow fuck jackpot. Holy fucking shit fuck",
+      "Was Ha-young's KakaoTalk hacked or somet",
+      "But that guilt was nothing compared to t"
+    ],
+    "tail": [
+      "Yup lmao Bring me a pack too when you co",
+      "— Lee Ha-young",
+      "Ha-young's crying face as the thumbnail.",
+      "After my date with my girlfriend, I got ",
+      "With his disgusting mug as the profile p"
+    ],
+    "shortCount": 67,
     "oddChars": {
       "U+2014": 43,
       "U+2665": 4,
       "U+25C7": 12,
       "U+25C6": 2,
-      "U+200D": 48,
-      "U+200C": 80,
-      "U+2060": 44,
-      "U+200B": 52,
       "U+1F4AC": 1
     }
   },
@@ -95,7 +117,7 @@
       "subscribe": false,
       "locked": false
     },
-    "textBlockCount": 64,
+    "textBlockCount": 62,
     "textBlocks": [
       {
         "own": 3730,
@@ -138,7 +160,7 @@
         "chain": "div < div.prose.prose-sm.sm:prose-base.md:prose-lg < div.relative.group.cursor-pointer.transition-[color,background-color,box-shadow] < div.relative < div.overflow-visible < div.max-w-4xl.mx-auto.px-4.sm:px-6"
       }
     ],
-    "firstBlockParentChildCount": 121,
+    "firstBlockParentChildCount": 107,
     "firstBlockParentChildren": [
       {
         "d": "div",
