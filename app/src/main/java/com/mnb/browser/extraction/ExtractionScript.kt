@@ -110,7 +110,8 @@ object ExtractionScript {
       if (shouldSkip(node)) return;
       var tag = node.tagName.toLowerCase();
       if (tag === 'br') { flush(); return; }
-      var isBlock = !INLINE[tag];
+      var disp = window.getComputedStyle(node).display || '';
+      var isBlock = disp ? (disp.indexOf('inline') !== 0 && disp.indexOf('ruby') !== 0 && disp !== 'contents') : !INLINE[tag];
       var level = (tag.length === 2 && tag.charAt(0) === 'h' && '123456'.indexOf(tag.charAt(1)) >= 0) ? parseInt(tag.charAt(1), 10) : 0;
       var prevLevel = headingLevel;
       if (isBlock) flush();
@@ -124,12 +125,22 @@ object ExtractionScript {
     for (var k = container.firstChild; k; k = k.nextSibling) walk(k);
     flush();
 
-    // 3. Chapter title: a heading inside the container, else common title elements, else first h1.
+    // 3. Chapter title: a title-like element, else the first heading that was kept, else a
+    //    leading "Chapter N" line. Never a bare h1, which is usually the book name.
     var chapterTitle = '';
-    var titleEl = container.querySelector('h1, h2, h3') ||
-      document.querySelector('.chapter-title, .entry-title, .post-title, #chapter-heading, [itemprop=headline]') ||
-      document.querySelector('h1');
-    if (titleEl) chapterTitle = normalize(titleEl.textContent || '');
+    var cands = document.querySelectorAll('[class*="chapter-title" i], [class*="chapter_title" i], [class*="chaptertitle" i], [class*="cha-tit" i], .entry-title, .post-title, #chapter-heading, [itemprop=headline]');
+    for (var ci = 0; ci < cands.length && !chapterTitle; ci++) {
+      if (!insideSkipped(cands[ci]) || cands[ci].closest('header')) {
+        if (!isHidden(cands[ci])) chapterTitle = normalize(cands[ci].innerText || cands[ci].textContent || '');
+      }
+    }
+    if (!chapterTitle) {
+      for (var hi = 0; hi < out.length; hi++) { if (out[hi].h > 0) { chapterTitle = out[hi].t; break; } }
+    }
+    if (!chapterTitle) {
+      var CH = /^(chapter|ch\.?|episode|ep\.?|အခန်း)\s*[0-9၀-၉]/i;
+      for (var oi = 0; oi < out.length && oi < 5; oi++) { if (CH.test(out[oi].t)) { chapterTitle = out[oi].t; break; } }
+    }
 
     return {
       pageTitle: normalize(document.title || ''),

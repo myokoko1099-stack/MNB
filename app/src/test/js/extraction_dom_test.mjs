@@ -51,6 +51,21 @@ const FORM_PAGE = `<!doctype html><html><head><title>Form wrap</title></head><bo
 const EMPTY_PAGE = `<!doctype html><html><head><title>Empty</title></head><body>
 <nav><a href="/x">Menu</a></nav><header>Site</header><footer>Foot</footer><button>Click</button></body></html>`;
 
+
+const BLOCK_SPANS = `<!doctype html><html><head><title>Book - WebNovel</title></head><body>
+<div class="g_wrap"><header><h1>Book Name Here</h1></header>
+<div class="cha-content"><h3 class="cha-tit"><span style="display:block">Chapter 1</span><span style="display:block">Chapter 1: Prologue</span></h3>
+<p>This was definitely not a game. Of course, it wasn't a dream, either, was it?</p>
+<p>But her voice definitely resounded within my head, loud and clear.</p></div></div></body></html>`;
+
+const BOOK_H1 = `<!doctype html><html><head><title>Site</title></head><body>
+<main><h1>Book Name As H1</h1><div class="chapter-title">Chapter 7: The Gate</div>
+<p>First long paragraph of the story which is certainly long enough to count here.</p>
+<p>Second long paragraph of the story which is certainly long enough to count too.</p></main></body></html>`;
+
+const NO_TITLE = `<!doctype html><html><head><title>Site</title></head><body>
+<div class="c"><p>Chapter 12 - Return</p><p>First long paragraph of the story which is certainly long enough to count here.</p></div></body></html>`;
+
 const browser = await chromium.launch();
 const results = [];
 async function run(name, html, check) {
@@ -92,6 +107,23 @@ await run('form wrapper + has-sidebar class still extracts', FORM_PAGE, r => {
 });
 await run('page with only chrome yields no paragraphs', EMPTY_PAGE, r => {
   assert.equal(r.paragraphs.length, 0, JSON.stringify(r.paragraphs));
+});
+
+await run('display:block spans are split into separate lines (no "Chapter 1Chapter 1")', BLOCK_SPANS, r => {
+  const t = texts(r);
+  assert.equal(t[0], 'Chapter 1', JSON.stringify(t));
+  assert.equal(t[1], 'Chapter 1: Prologue');
+  assert.ok(!t.some(x => x.includes('Chapter 1Chapter')));
+});
+await run('chapter title comes from the title element, not the book h1 in header', BLOCK_SPANS, r => {
+  assert.equal(r.chapterTitle, 'Chapter 1 Chapter 1: Prologue');
+  assert.ok(!r.chapterTitle.includes('Book Name'));
+});
+await run('chapter title prefers .chapter-title over a bare h1', BOOK_H1, r => {
+  assert.equal(r.chapterTitle, 'Chapter 7: The Gate');
+});
+await run('chapter title falls back to a leading "Chapter N" line', NO_TITLE, r => {
+  assert.equal(r.chapterTitle, 'Chapter 12 - Return');
 });
 
 await browser.close();
