@@ -12,7 +12,7 @@ defaultConfig {
     minSdk = 24
     targetSdk = 34
     versionCode = 1
-    versionName = "0.1.0-phase01"
+    versionName = "0.2.0-phase02"
 }
 
 buildTypes {
@@ -41,5 +41,7 @@ implementation("androidx.compose.material3:material3")
 implementation("androidx.compose.material:material-icons-core")
 
 testImplementation("junit:junit:4.13.2")
+// JVM implementation of org.json (the Android one is only a stub in unit tests)
+testImplementation("org.json:json:20231013")
 
 }

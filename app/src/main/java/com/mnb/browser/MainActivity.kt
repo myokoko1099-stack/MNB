@@ -7,6 +7,8 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
+import com.mnb.browser.extraction.ExtractionController
+import com.mnb.browser.extraction.ExtractionStateManager
 import com.mnb.browser.navigation.NavigationController
 import com.mnb.browser.state.BrowserStateManager
 import com.mnb.browser.ui.BrowserScreen
@@ -16,12 +18,14 @@ class MainActivity : ComponentActivity() {
 private val stateManager = BrowserStateManager()
 private val webController = WebViewController(stateManager)
 private val navigation = NavigationController(webController, stateManager)
+private val extractionState = ExtractionStateManager()
+private val extraction = ExtractionController(webController, extractionState)
 
 override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
     setContent {
         MaterialTheme(colorScheme = if (isSystemInDarkTheme()) darkColorScheme() else lightColorScheme()) {
-            BrowserScreen(stateManager, webController, navigation)
+            BrowserScreen(stateManager, webController, navigation, extraction, extractionState)
         }
     }
 }

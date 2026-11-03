@@ -15,6 +15,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Warning
@@ -45,6 +46,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import com.mnb.browser.extraction.ExtractionController
+import com.mnb.browser.extraction.ExtractionState
+import com.mnb.browser.extraction.ExtractionStateManager
 import com.mnb.browser.navigation.NavigationController
 import com.mnb.browser.state.BrowserError
 import com.mnb.browser.state.BrowserStateManager
@@ -55,13 +59,18 @@ fun BrowserScreen(
 stateManager: BrowserStateManager,
 webController: WebViewController,
 navigation: NavigationController,
+extraction: ExtractionController,
+extractionState: ExtractionStateManager,
 ) {
 val state = stateManager.state
+val extractionUi = extractionState.state
 val focus = LocalFocusManager.current
 var input by rememberSaveable { mutableStateOf("") }
 LaunchedEffect(state.currentUrl) { input = state.currentUrl }
 
 BackHandler(enabled = state.canGoBack) { navigation.back() }
+// Registered after the one above, so it wins while the preview is open.
+BackHandler(enabled = extractionUi !is ExtractionState.Idle) { extraction.close() }
 
 fun go() {
     focus.clearFocus()
@@ -125,6 +134,12 @@ Scaffold(
                 selected = false, onClick = { navigation.refresh() },
                 icon = { Icon(Icons.Default.Refresh, null) }, label = { Text("Refresh") },
             )
+            NavigationBarItem(
+                selected = false,
+                enabled = state.currentUrl.isNotBlank() && !state.isLoading && state.error == null,
+                onClick = { extraction.extract() },
+                icon = { Icon(Icons.Default.List, null) }, label = { Text("Extract") },
+            )
         }
     },
 ) { padding ->
@@ -135,6 +150,13 @@ Scaffold(
         )
         state.error?.let { error ->
             ErrorOverlay(error, onRetry = { navigation.refresh() }, onDismiss = { navigation.dismissError() })
+        }
+        if (extractionUi !is ExtractionState.Idle) {
+            ExtractionPreviewScreen(
+                state = extractionUi,
+                onClose = { extraction.close() },
+                onRetry = { extraction.extract() },
+            )
         }
     }
 }

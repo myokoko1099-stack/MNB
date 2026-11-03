@@ -17,6 +17,7 @@ import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import com.mnb.browser.error.ErrorHandler
+import com.mnb.browser.extraction.ExtractionScript
 import com.mnb.browser.navigation.UrlPolicy
 import com.mnb.browser.state.BrowserStateManager
 
@@ -54,6 +55,31 @@ fun load(url: String) { webView?.loadUrl(url) }
 fun goBack() { webView?.takeIf { it.canGoBack() }?.goBack() }
 fun goForward() { webView?.takeIf { it.canGoForward() }?.goForward() }
 fun reload() { webView?.reload() }
+/**
+ * Runs the extraction script on the current page. [onResult] receives the raw JSON text
+ * (or null on timeout) and the page URL, always on the main thread, exactly once.
+ * Returns false when there is no WebView to run it in.
+ */
+fun runExtraction(onResult: (rawJson: String?, url: String?) -> Unit): Boolean {
+    val view = webView ?: return false
+    var delivered = false
+    val timeout = Runnable {
+        if (!delivered) {
+            delivered = true
+            onResult(null, view.url)
+        }
+    }
+    view.postDelayed(timeout, EXTRACTION_TIMEOUT_MS)
+    view.evaluateJavascript(ExtractionScript.SOURCE) { raw ->
+        if (!delivered) {
+            delivered = true
+            view.removeCallbacks(timeout)
+            onResult(raw, view.url)
+        }
+    }
+    return true
+}
+
 fun onPause() { webView?.onPause() }
 fun onResume() { webView?.onResume() }
 
@@ -133,4 +159,7 @@ private inner class Chrome : WebChromeClient() {
     override fun onConsoleMessage(consoleMessage: ConsoleMessage?): Boolean = true
 }
 
+    private companion object {
+        const val EXTRACTION_TIMEOUT_MS = 15_000L
+    }
 }
