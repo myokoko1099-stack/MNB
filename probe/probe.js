@@ -16,6 +16,14 @@ function summarize(r) {
     paragraphCount: ps.length,
     totalChars: ps.reduce((a, p) => a + p.t.length, 0),
     firstLengths: ps.slice(0, 8).map((p) => p.t.length),
+    oddChars: (function () {
+      const h = {};
+      for (const p of ps) for (const ch of p.t) {
+        const cp = ch.codePointAt(0);
+        if (cp > 127 || cp < 32) { const k = 'U+' + cp.toString(16).toUpperCase(); h[k] = (h[k] || 0) + 1; }
+      }
+      return h;
+    })(),
   };
 }
 
