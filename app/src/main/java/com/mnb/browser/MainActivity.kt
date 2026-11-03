@@ -15,11 +15,17 @@ import com.mnb.browser.reader.ReaderStateManager
 import com.mnb.browser.reader.SharedPreferencesKeyValueStore
 import com.mnb.browser.state.BrowserStateManager
 import com.mnb.browser.ui.BrowserScreen
+import com.mnb.browser.web.FileWebSessionStore
 import com.mnb.browser.web.WebViewController
+import java.io.File
 
 class MainActivity : ComponentActivity() {
     private val stateManager = BrowserStateManager()
-    private val webController = WebViewController(stateManager)
+    // filesDir is resolved lazily, once the Activity is attached.
+    private val webController = WebViewController(
+        stateManager,
+        FileWebSessionStore { File(filesDir, "web_session.bin") },
+    )
     private val navigation = NavigationController(webController, stateManager)
     private val extractionState = ExtractionStateManager()
     private val extraction = ExtractionController(webController, extractionState)

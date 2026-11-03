@@ -69,6 +69,8 @@ fun BrowserScreen(
     val state = stateManager.state
     val extractionUi = extractionState.state
     val readerContent = readerState.content
+    // Hide the browser bars while the preview or reader is full screen.
+    val overlayOpen = extractionUi !is ExtractionState.Idle || readerContent != null
     val focus = LocalFocusManager.current
     var input by rememberSaveable { mutableStateOf("") }
     LaunchedEffect(state.currentUrl) { input = state.currentUrl }
@@ -86,7 +88,7 @@ fun BrowserScreen(
 
     Scaffold(
         topBar = {
-            Surface(tonalElevation = 3.dp) {
+            if (!overlayOpen) Surface(tonalElevation = 3.dp) {
                 Column(Modifier.fillMaxWidth()) {
                     Text(
                         text = state.title.ifBlank { "MNB" },
@@ -124,7 +126,7 @@ fun BrowserScreen(
             }
         },
         bottomBar = {
-            NavigationBar {
+            if (!overlayOpen) NavigationBar {
                 NavigationBarItem(
                     selected = false, enabled = state.canGoBack, onClick = { navigation.back() },
                     icon = { Icon(Icons.Default.ArrowBack, null) }, label = { Text("Back") },
