@@ -3,6 +3,7 @@ package com.mnb.browser.ui
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -21,6 +22,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -38,6 +40,7 @@ fun ExtractionPreviewScreen(
     state: ExtractionState,
     onClose: () -> Unit,
     onRetry: () -> Unit,
+    onRead: (ExtractedContent) -> Unit,
 ) {
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Column(Modifier.fillMaxSize()) {
@@ -48,6 +51,10 @@ fun ExtractionPreviewScreen(
                 ) {
                     IconButton(onClick = onClose) { Icon(Icons.Default.Close, contentDescription = "Close preview") }
                     Text("Extracted text", style = MaterialTheme.typography.titleMedium)
+                    Spacer(Modifier.weight(1f))
+                    if (state is ExtractionState.Success) {
+                        TextButton(onClick = { onRead(state.content) }) { Text("Read") }
+                    }
                 }
             }
             when (state) {
