@@ -51,6 +51,7 @@ import com.mnb.browser.extraction.ExtractionState
 import com.mnb.browser.extraction.ExtractionStateManager
 import com.mnb.browser.navigation.NavigationController
 import com.mnb.browser.reader.ReaderPositionRepository
+import com.mnb.browser.reader.ReaderSettingsRepository
 import com.mnb.browser.reader.ReaderStateManager
 import com.mnb.browser.state.BrowserError
 import com.mnb.browser.state.BrowserStateManager
@@ -65,6 +66,7 @@ fun BrowserScreen(
     extractionState: ExtractionStateManager,
     readerState: ReaderStateManager,
     readerPositions: ReaderPositionRepository,
+    readerSettings: ReaderSettingsRepository,
 ) {
     val state = stateManager.state
     val extractionUi = extractionState.state
@@ -172,6 +174,7 @@ fun BrowserScreen(
                 ReaderScreen(
                     content = readerContent,
                     positions = readerPositions,
+                    settingsRepository = readerSettings,
                     onClose = { readerState.close() },
                 )
             }
