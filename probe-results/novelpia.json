@@ -1,0 +1,157 @@
+{
+  "url": "https://global.novelpia.com/viewer/712724",
+  "startedAt": "2026-11-03T07:25:24.617Z",
+  "status": 200,
+  "title": "Novelpia - Awaken Your Fantasy Through Webnovels",
+  "extractBeforeScroll": {
+    "chapterTitle": "",
+    "paragraphCount": 0,
+    "totalChars": 0,
+    "firstLengths": [],
+    "head": [],
+    "tail": [],
+    "shortCount": 0,
+    "oddChars": {}
+  },
+  "perScrollStep": [
+    {
+      "step": 8,
+      "paragraphCount": 0
+    },
+    {
+      "step": 16,
+      "paragraphCount": 0
+    },
+    {
+      "step": 24,
+      "paragraphCount": 0
+    },
+    {
+      "step": 32,
+      "paragraphCount": 0
+    },
+    {
+      "step": 40,
+      "paragraphCount": 0
+    }
+  ],
+  "extractAfterScroll": {
+    "chapterTitle": "",
+    "paragraphCount": 0,
+    "totalChars": 0,
+    "firstLengths": [],
+    "head": [],
+    "tail": [],
+    "shortCount": 0,
+    "oddChars": {}
+  },
+  "structure": {
+    "bodyTextLength": 181,
+    "pCount": 3,
+    "iframes": 12,
+    "canvases": 0,
+    "shadowRoots": 0,
+    "flags": {
+      "log in": false,
+      "login": false,
+      "sign in": false,
+      "unlock": false,
+      "captcha": false,
+      "just a moment": false,
+      "verify you are human": false,
+      "premium": false,
+      "subscribe": false,
+      "locked": false
+    },
+    "textBlockCount": 6,
+    "textBlocks": [
+      {
+        "own": 5198,
+        "chain": "script#__NUXT_DATA__ < body.dark < html"
+      },
+      {
+        "own": 1817,
+        "chain": "script < body.dark < html"
+      },
+      {
+        "own": 1035,
+        "chain": "script < body.dark < html"
+      },
+      {
+        "own": 423,
+        "chain": "script < body.dark < html"
+      },
+      {
+        "own": 132,
+        "chain": "noscript < body.dark < html"
+      },
+      {
+        "own": 66,
+        "chain": "p#radix-vue-dialog-description-v-0-0-1.text-sm.text-muted-foreground.text-center < div.flex.flex-col.gap-y-1.5.text-center < span < div.fixed.left-1/2.top-1/2.z-[200] < body.dark < html"
+      }
+    ],
+    "firstBlockParentChildCount": 46,
+    "firstBlockParentChildren": [
+      {
+        "d": "div#__nuxt",
+        "textLen": 0,
+        "hidden": false
+      },
+      {
+        "d": "div#teleports",
+        "textLen": 0,
+        "hidden": false
+      },
+      {
+        "d": "script#__NUXT_DATA__",
+        "textLen": 5198,
+        "hidden": true
+      },
+      {
+        "d": "script",
+        "textLen": 1817,
+        "hidden": true
+      },
+      {
+        "d": "script",
+        "textLen": 1035,
+        "hidden": true
+      },
+      {
+        "d": "script",
+        "textLen": 423,
+        "hidden": true
+      },
+      {
+        "d": "noscript",
+        "textLen": 132,
+        "hidden": false
+      },
+      {
+        "d": "iframe",
+        "textLen": 0,
+        "hidden": true
+      },
+      {
+        "d": "div#criteo-tags-div",
+        "textLen": 0,
+        "hidden": true
+      },
+      {
+        "d": "img",
+        "textLen": 0,
+        "hidden": true
+      },
+      {
+        "d": "img",
+        "textLen": 0,
+        "hidden": true
+      },
+      {
+        "d": "iframe",
+        "textLen": 0,
+        "hidden": true
+      }
+    ]
+  }
+}
