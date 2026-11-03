@@ -16,6 +16,9 @@ function summarize(r) {
     paragraphCount: ps.length,
     totalChars: ps.reduce((a, p) => a + p.t.length, 0),
     firstLengths: ps.slice(0, 8).map((p) => p.t.length),
+    head: ps.slice(0, 5).map((p) => p.t.slice(0, 40)),
+    tail: ps.slice(-5).map((p) => p.t.slice(0, 40)),
+    shortCount: ps.filter((p) => p.t.length < 20).length,
     oddChars: (function () {
       const h = {};
       for (const p of ps) for (const ch of p.t) {
