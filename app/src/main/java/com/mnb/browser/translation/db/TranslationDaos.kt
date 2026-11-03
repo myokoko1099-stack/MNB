@@ -28,7 +28,10 @@ interface NovelDao {
 
 @Dao
 interface ChapterDao {
-    @Upsert fun upsert(chapter: ChapterEntity)
+    /** Strict insert: a duplicate id or chapter number throws SQLiteConstraintException (@Upsert would swallow it). */
+    @Insert fun insert(chapter: ChapterEntity)
+
+    @Update fun update(chapter: ChapterEntity): Int
 
     @Query("SELECT * FROM chapters WHERE chapterId = :chapterId")
     fun get(chapterId: String): ChapterEntity?

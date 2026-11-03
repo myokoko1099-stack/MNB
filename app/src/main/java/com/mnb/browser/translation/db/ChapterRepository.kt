@@ -44,7 +44,7 @@ class ChapterRepository(private val db: MnbDatabase) {
                 val existing = chapterDao.get(chapterId.value)
                 when {
                     existing == null -> {
-                        chapterDao.upsert(
+                        chapterDao.insert(
                             ChapterEntity(chapterId.value, novelId.value, chapterNumber, originalText, hash, nowMillis),
                         )
                         ChapterSaveResult.CREATED
@@ -53,7 +53,7 @@ class ChapterRepository(private val db: MnbDatabase) {
                         throw IllegalArgumentException("Chapter ${chapterId.value} belongs to a different novel")
                     existing.contentHash == hash -> ChapterSaveResult.UNCHANGED
                     else -> {
-                        chapterDao.upsert(
+                        chapterDao.update(
                             existing.copy(originalText = originalText, contentHash = hash, updatedAtMillis = nowMillis),
                         )
                         chunkDao.deleteForChapter(chapterId.value)
