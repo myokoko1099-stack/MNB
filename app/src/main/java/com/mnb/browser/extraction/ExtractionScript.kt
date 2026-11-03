@@ -154,6 +154,22 @@ object ExtractionScript {
       }
     }
 
+    if (out.length <= 2) {
+      var desc = function (e) {
+        if (!e || !e.tagName) return '';
+        var cls = typeof e.className === 'string' ? e.className : '';
+        return e.tagName.toLowerCase() + (e.id ? '#' + e.id : '') + (cls ? '.' + cls.trim().split(/\s+/).slice(0, 3).join('.') : '');
+      };
+      var chain = [];
+      for (var dn = container, dd = 0; dn && dd < 6; dn = dn.parentElement, dd++) chain.push(desc(dn));
+      var kids = [];
+      for (var kc = 0; kc < container.children.length && kc < 4; kc++) kids.push(desc(container.children[kc]));
+      var shadows = 0, all = document.querySelectorAll('*');
+      for (var sc = 0; sc < all.length; sc++) { if (all[sc].shadowRoot) shadows++; }
+      out.push({ t: 'DEBUG chain: ' + chain.join(' < '), h: 0 });
+      out.push({ t: 'DEBUG children=' + container.children.length + ' first: ' + kids.join(' | ') + ' ; p in doc=' + document.querySelectorAll('p').length + ' ; shadow=' + shadows + ' ; body text length=' + (document.body.innerText || '').length, h: 0 });
+    }
+
     return {
       pageTitle: normalize(document.title || ''),
       chapterTitle: chapterTitle,
