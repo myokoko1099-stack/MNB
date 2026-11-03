@@ -1,45 +1,81 @@
 {
   "url": "https://noveldex.io/series/novel/my-girlfriend-is-already-fully-trained/chapter/2",
-  "startedAt": "2026-11-03T07:15:38.989Z",
+  "startedAt": "2026-11-03T07:19:12.448Z",
   "status": 200,
   "title": "Chapter 2: Chapter 2 - My Girlfriend Is Already Fully Trained | NovelDex",
   "extractBeforeScroll": {
     "chapterTitle": "",
-    "paragraphCount": 1,
-    "totalChars": 200,
+    "paragraphCount": 219,
+    "totalChars": 8896,
     "firstLengths": [
-      200
-    ]
+      12,
+      54,
+      134,
+      45,
+      69,
+      144,
+      124,
+      80
+    ],
+    "oddChars": {
+      "U+2014": 43,
+      "U+2665": 4,
+      "U+25C7": 12,
+      "U+25C6": 2,
+      "U+200D": 48,
+      "U+200C": 80,
+      "U+2060": 44,
+      "U+200B": 52,
+      "U+1F4AC": 1
+    }
   },
   "perScrollStep": [
     {
       "step": 8,
-      "paragraphCount": 1
+      "paragraphCount": 219
     },
     {
       "step": 16,
-      "paragraphCount": 1
+      "paragraphCount": 219
     },
     {
       "step": 24,
-      "paragraphCount": 1
+      "paragraphCount": 219
     },
     {
       "step": 32,
-      "paragraphCount": 1
+      "paragraphCount": 219
     },
     {
       "step": 40,
-      "paragraphCount": 1
+      "paragraphCount": 219
     }
   ],
   "extractAfterScroll": {
     "chapterTitle": "",
-    "paragraphCount": 1,
-    "totalChars": 200,
+    "paragraphCount": 219,
+    "totalChars": 8896,
     "firstLengths": [
-      200
-    ]
+      12,
+      54,
+      134,
+      45,
+      69,
+      144,
+      124,
+      80
+    ],
+    "oddChars": {
+      "U+2014": 43,
+      "U+2665": 4,
+      "U+25C7": 12,
+      "U+25C6": 2,
+      "U+200D": 48,
+      "U+200C": 80,
+      "U+2060": 44,
+      "U+200B": 52,
+      "U+1F4AC": 1
+    }
   },
   "structure": {
     "bodyTextLength": 10042,
@@ -59,7 +95,7 @@
       "subscribe": false,
       "locked": false
     },
-    "textBlockCount": 65,
+    "textBlockCount": 64,
     "textBlocks": [
       {
         "own": 3730,
@@ -102,7 +138,7 @@
         "chain": "div < div.prose.prose-sm.sm:prose-base.md:prose-lg < div.relative.group.cursor-pointer.transition-[color,background-color,box-shadow] < div.relative < div.overflow-visible < div.max-w-4xl.mx-auto.px-4.sm:px-6"
       }
     ],
-    "firstBlockParentChildCount": 122,
+    "firstBlockParentChildCount": 121,
     "firstBlockParentChildren": [
       {
         "d": "div",
