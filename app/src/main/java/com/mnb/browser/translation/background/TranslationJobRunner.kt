@@ -17,7 +17,10 @@ enum class JobRunResult {
     RETRY,
     FAILURE,
 
-    /** (I9-B1) A pending job with higher priority, or queued earlier with the same priority, must start first. The job stays PENDING. */
+    /**
+     * (I9-B1) A pending job with higher priority, or queued earlier with the same priority, must start first. The job stays PENDING.
+     * (I10-D) Also: the chapter is being translated right now by another caller (instant or background); the job goes back to PENDING.
+     */
     DEFERRED,
 }
 
@@ -26,7 +29,7 @@ enum class JobRunResult {
  * the job row in step. Blocking: call off the main thread. Finished chunks are reused by the
  * pipeline on every new attempt.
  *
- * Retryable failures (provider, partial, database, duplicate) put the job back to PENDING until
+ * Retryable failures (provider, partial, database) put the job back to PENDING until
  * [maxAttempts] attempts are used, then FAILED. Permanent failures (empty text, unsupported
  * language, invalid chunks, missing chapter) are FAILED at once. A stop (isStopped) leaves the job
  * PENDING so the work can resume, unless the job was cancelled meanwhile.
@@ -34,6 +37,10 @@ enum class JobRunResult {
  * Priority (I9-B1): a PENDING job only starts when no other PENDING job outranks it (higher
  * priority first, then FIFO). If one does, the runner waits up to [turnWaitMillis] for it to start
  * and then returns [JobRunResult.DEFERRED]. A job that is already PROCESSING (resumed) is never held back.
+ *
+ * Busy chapter (I10-D): when the pipeline reports DUPLICATE_REQUEST (the shared per-chapter lock is
+ * held, for example by an instant translation) nothing was translated or stored. The job returns to
+ * PENDING and the result is [JobRunResult.DEFERRED]; no retry attempt is used up.
  */
 class TranslationJobRunner(
     private val chapters: ChapterRepository,
@@ -99,12 +106,18 @@ class TranslationJobRunner(
                 JobRunResult.RETRY
             }
             is InstantTranslationOutcome.Failed -> {
-                val error = errorFor(outcome.reason)
-                if (isRetryable(outcome.reason)) {
-                    retryOrFail(job, attempt, error, outcome.completedChunks, outcome.totalChunks)
+                if (outcome.reason == InstantTranslationFailure.DUPLICATE_REQUEST) {
+                    // Another caller is translating this chapter right now: wait, do not use an attempt.
+                    record(job, TranslationStatus.PENDING, job.completedChunks, null, null)
+                    JobRunResult.DEFERRED
                 } else {
-                    record(job, TranslationStatus.FAILED, outcome.completedChunks, outcome.totalChunks, error)
-                    JobRunResult.FAILURE
+                    val error = errorFor(outcome.reason)
+                    if (isRetryable(outcome.reason)) {
+                        retryOrFail(job, attempt, error, outcome.completedChunks, outcome.totalChunks)
+                    } else {
+                        record(job, TranslationStatus.FAILED, outcome.completedChunks, outcome.totalChunks, error)
+                        JobRunResult.FAILURE
+                    }
                 }
             }
         }
