@@ -141,7 +141,7 @@ class TranslationWorkerProviderGuardTest : DbTestBase() {
 
     @Test fun refusalDoesNotTouchAFinishedJob() {
         val created = jobs.create(c1, 0, 10L)
-        jobs.updateProgress(created.jobId, TranslationStatus.COMPLETED, 3, 20L)
+        jobs.updateProgress(created.jobId, TranslationStatus.COMPLETED, 3, 20L, null, 3)
         assertEquals(ListenableWorker.Result.failure(), worker().doWork())
         assertEquals(TranslationStatus.COMPLETED, jobs.get(created.jobId)!!.status)
     }
