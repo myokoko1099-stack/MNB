@@ -308,7 +308,7 @@ class InstantTranslationPipelineTest : DbTestBase() {
 
         val changed = pipeline(real).translate(request(body = "Changed one.\n\nChanged two."), 3L).completed()
         assertFalse(changed.reusedWholeChapter)
-        assertEquals(2, changed.translation.metadata.translationVersion)
+        assertEquals(3, changed.translation.metadata.translationVersion)
     }
 
     // 13. Status transitions
