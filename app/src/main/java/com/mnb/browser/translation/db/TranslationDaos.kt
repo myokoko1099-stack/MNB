@@ -1,6 +1,7 @@
 package com.mnb.browser.translation.db
 
 import androidx.room.Dao
+import androidx.room.Embedded
 import androidx.room.Insert
 import androidx.room.Query
 import androidx.room.Update
@@ -104,9 +105,31 @@ interface TranslationJobDao {
     )
     fun countOutranking(jobId: Long, priority: Int): Int
 
+    /**
+     * Changes the priority of one job only while it is still PENDING (I9-B2). The status check is
+     * part of the statement, so a job that has just started (PROCESSING) or finished is never
+     * touched. Returns the number of rows changed (0 or 1).
+     */
+    @Query("UPDATE translation_jobs SET priority = :priority WHERE jobId = :jobId AND status = 'PENDING'")
+    fun updatePendingPriority(jobId: Long, priority: Int): Int
+
+    /** PENDING jobs of one novel with their chapter number, in chapter order (I9-B2). */
+    @Query(
+        "SELECT t.*, c.chapterNumber AS chapterNumber FROM translation_jobs t " +
+            "JOIN chapters c ON c.chapterId = t.chapterId " +
+            "WHERE t.status = 'PENDING' AND c.novelId = :novelId ORDER BY c.chapterNumber, t.jobId",
+    )
+    fun pendingForNovel(novelId: String): List<PendingJobRow>
+
     @Query(
         "UPDATE translation_jobs SET status = 'CANCELLED', updatedAtMillis = :nowMillis " +
             "WHERE chapterId = :chapterId AND status IN ('PENDING', 'PROCESSING')",
     )
     fun cancelUnfinished(chapterId: String, nowMillis: Long): Int
 }
+
+/** A PENDING job row together with its chapter's number (I9-B2 query result; not a table). */
+data class PendingJobRow(
+    @Embedded val job: TranslationJobEntity,
+    val chapterNumber: Int,
+)
