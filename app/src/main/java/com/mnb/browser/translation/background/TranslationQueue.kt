@@ -32,8 +32,8 @@ sealed interface EnqueueResult {
  *
  * Priority (I9-B1): each new job gets a [TranslationPriority] (NORMAL by default). Waiting jobs
  * start highest priority first and FIFO within the same priority; [TranslationJobRunner] enforces
- * that order when a job's work starts. The priority is fixed when the job is created: enqueueing a
- * chapter that already has an unfinished job never changes that job's priority.
+ * that order when a job's work starts. Enqueueing a chapter that already has an unfinished job never
+ * changes that job's priority; a PENDING job's priority is changed with [TranslationPriorityManager] (I9-B2).
  */
 class TranslationQueue(
     private val chapters: ChapterRepository,
