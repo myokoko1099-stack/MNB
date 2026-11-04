@@ -97,7 +97,7 @@ class InstantTranslationPipeline(
         } catch (e: Exception) {
             return dbFailure(e)
         }
-        val priorVersion = previous?.takeIf { it.status == TranslationStatus.COMPLETED }?.metadata?.translationVersion ?: 0
+        val priorVersion = previous?.takeIf { it.status == TranslationStatus.COMPLETED || it.status == TranslationStatus.PENDING }?.metadata?.translationVersion ?: 0
         val interimVersion = maxOf(priorVersion, 1)
 
         // Chunking and integrity.
