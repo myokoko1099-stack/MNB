@@ -33,6 +33,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -50,6 +51,9 @@ import com.mnb.browser.reader.ReaderPositionRepository
 import com.mnb.browser.reader.ReaderSettings
 import com.mnb.browser.reader.ReaderSettingsRepository
 import com.mnb.browser.reader.ReaderTheme
+import com.mnb.browser.reader.translation.ReaderChapterTranslation
+import com.mnb.browser.reader.translation.ReaderTranslationDisplay
+import com.mnb.browser.reader.translation.ReaderViewMode
 import kotlin.math.roundToInt
 
 /**
@@ -58,6 +62,11 @@ import kotlin.math.roundToInt
  *
  * Appearance (font size, margin, paragraph spacing, light/dark) comes from [settingsRepository]
  * and is saved on every change, so it is restored the next time the app opens.
+ *
+ * Translation display (Phase 04-I10-B): [translation] is the open chapter's translation state
+ * (null = no translation support, the reader works exactly as before). The original text is always
+ * readable. The translated text is offered only when the state is Completed. The saved reading
+ * position belongs to the original text and is never overwritten from the translated view.
  */
 @Composable
 fun ReaderScreen(
@@ -65,6 +74,7 @@ fun ReaderScreen(
     positions: ReaderPositionRepository,
     settingsRepository: ReaderSettingsRepository,
     onClose: () -> Unit,
+    translation: ReaderChapterTranslation? = null,
 ) {
     val itemCount = content.paragraphs.size + 1
     val saved = remember(content.url, itemCount) { positions.load(content.url, itemCount) }
@@ -88,11 +98,19 @@ fun ReaderScreen(
     }
     DisposableEffect(content.url, itemCount) { onDispose { savePosition() } }
 
-    val progress by remember(listState) {
+    // Translation view (I10-B): its own list state, never saved, so the original's saved position stays valid.
+    val translationListState = rememberLazyListState()
+    val chapterKey = translation?.identity?.chapterId ?: content.url
+    var requestedMode by remember(chapterKey) { mutableStateOf(ReaderViewMode.ORIGINAL) }
+    val display = remember(translation?.state) { ReaderTranslationDisplay.of(translation?.state) }
+    val mode = display.effectiveMode(requestedMode)
+    val activeListState = if (mode == ReaderViewMode.TRANSLATION) translationListState else listState
+
+    val progress by remember(activeListState) {
         derivedStateOf {
-            val total = listState.layoutInfo.totalItemsCount
+            val total = activeListState.layoutInfo.totalItemsCount
             if (total <= 1) 0f
-            else (listState.firstVisibleItemIndex.toFloat() / (total - 1)).coerceIn(0f, 1f)
+            else (activeListState.firstVisibleItemIndex.toFloat() / (total - 1)).coerceIn(0f, 1f)
         }
     }
 
@@ -144,21 +162,68 @@ fun ReaderScreen(
                                 onReset = { updateSettings(ReaderSettings()) },
                             )
                         }
+                        if (display.showControls) {
+                            TranslationBar(display, mode, onModeChange = { requestedMode = it })
+                        }
                         LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
                     }
                 }
                 SelectionContainer(Modifier.weight(1f)) {
-                    LazyColumn(
-                        Modifier.fillMaxSize(),
-                        state = listState,
-                        contentPadding = PaddingValues(horizontal = settings.marginDp.dp, vertical = 16.dp),
-                        verticalArrangement = Arrangement.spacedBy(settings.paragraphSpacingDp.dp),
-                    ) {
-                        item { ChapterHeader(content) }
-                        items(content.paragraphs) { paragraph -> ReaderParagraph(paragraph, settings) }
+                    key(mode) {
+                        LazyColumn(
+                            Modifier.fillMaxSize(),
+                            state = activeListState,
+                            contentPadding = PaddingValues(horizontal = settings.marginDp.dp, vertical = 16.dp),
+                            verticalArrangement = Arrangement.spacedBy(settings.paragraphSpacingDp.dp),
+                        ) {
+                            item { ChapterHeader(content) }
+                            if (mode == ReaderViewMode.TRANSLATION) {
+                                items(display.translatedParagraphs) { text ->
+                                    ReaderParagraph(ExtractedParagraph(text), settings)
+                                }
+                            } else {
+                                items(content.paragraphs) { paragraph -> ReaderParagraph(paragraph, settings) }
+                            }
+                        }
                     }
                 }
             }
+        }
+    }
+}
+
+/** Original / translation switch plus the translation status line (Phase 04-I10-B). */
+@Composable
+private fun TranslationBar(
+    display: ReaderTranslationDisplay,
+    mode: ReaderViewMode,
+    onModeChange: (ReaderViewMode) -> Unit,
+) {
+    Column(
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(
+                selected = mode == ReaderViewMode.ORIGINAL,
+                onClick = { onModeChange(ReaderViewMode.ORIGINAL) },
+                label = { Text("မူရင်း") },
+            )
+            FilterChip(
+                selected = mode == ReaderViewMode.TRANSLATION,
+                enabled = display.canShowTranslation,
+                onClick = { onModeChange(ReaderViewMode.TRANSLATION) },
+                label = { Text("မြန်မာဘာသာပြန်") },
+            )
+        }
+        display.message?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
+        display.detail?.let {
+            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        if (display.showProgress) {
+            val fraction = display.progress
+            if (fraction == null) LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            else LinearProgressIndicator(progress = { fraction }, modifier = Modifier.fillMaxWidth())
         }
     }
 }

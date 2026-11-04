@@ -13,6 +13,7 @@ import com.mnb.browser.navigation.NavigationController
 import com.mnb.browser.reader.ReaderPositionRepository
 import com.mnb.browser.reader.ReaderSettingsRepository
 import com.mnb.browser.reader.ReaderStateManager
+import com.mnb.browser.reader.translation.ReaderTranslationStateHolder
 import com.mnb.browser.reader.SharedPreferencesKeyValueStore
 import com.mnb.browser.state.BrowserStateManager
 import com.mnb.browser.ui.BrowserScreen
@@ -30,7 +31,7 @@ class MainActivity : ComponentActivity() {
     private val navigation = NavigationController(webController, stateManager)
     private val extractionState = ExtractionStateManager()
     private val extraction = ExtractionController(webController, extractionState)
-    private val readerState = ReaderStateManager()
+    private val readerState = ReaderStateManager(ReaderTranslationStateHolder())
     // Lazy: applicationContext is only available after the Activity is attached.
     private val readerPositions by lazy {
         ReaderPositionRepository(SharedPreferencesKeyValueStore(applicationContext))
