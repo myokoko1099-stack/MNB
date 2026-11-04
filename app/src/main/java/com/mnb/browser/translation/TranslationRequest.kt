@@ -8,6 +8,11 @@ data class TranslationRequest(
     val text: String,
     val sourceLanguage: SourceLanguage,
     val targetLanguage: TargetLanguage = TargetLanguage.MYANMAR,
+    /**
+     * What the provider should remember about the novel for this text (characters, glossary,
+     * story). Null when no memory was retrieved; providers that ignore it keep working unchanged.
+     */
+    val context: TranslationContext? = null,
 ) {
     /** Null when the request is valid, otherwise the reason it is not. */
     fun validate(): TranslationError? = when {
