@@ -68,7 +68,7 @@ abstract class MnbDatabase : RoomDatabase() {
  * [CURRENT_VERSION] is raised to match. The exported schema JSON for each version stays in git.
  */
 object MnbMigrations {
-    const val CURRENT_VERSION = 2
+    const val CURRENT_VERSION = 3
 
     /** Version 2 (Phase 04-I6): adds the Context Memory tables. Existing tables and rows are untouched. */
     val MIGRATION_1_2: Migration = object : Migration(1, 2) {
@@ -77,5 +77,15 @@ object MnbMigrations {
         }
     }
 
-    val ALL: Array<Migration> = arrayOf(MIGRATION_1_2)
+    /**
+     * Version 3 (Phase 04-I9-B1): adds translation_jobs.priority. ADD COLUMN keeps every existing
+     * row; they all get the default 1, which is NORMAL.
+     */
+    val MIGRATION_2_3: Migration = object : Migration(2, 3) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE translation_jobs ADD COLUMN priority INTEGER NOT NULL DEFAULT 1")
+        }
+    }
+
+    val ALL: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3)
 }

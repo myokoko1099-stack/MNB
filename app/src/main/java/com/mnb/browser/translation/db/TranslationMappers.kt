@@ -12,6 +12,7 @@ import com.mnb.browser.translation.TranslationChunk
 import com.mnb.browser.translation.TranslationError
 import com.mnb.browser.translation.TranslationJob
 import com.mnb.browser.translation.TranslationMetadata
+import com.mnb.browser.translation.TranslationPriority
 import com.mnb.browser.translation.TranslationStatus
 import com.mnb.browser.translation.TranslationStyle
 
@@ -92,6 +93,7 @@ internal fun TranslationJobEntity.toModel() = TranslationJob(
     completedChunks = completedChunks,
     status = parseStatus(status),
     errorCode = errorCode?.let { code -> TranslationError.values().firstOrNull { it.name == code } },
+    priority = TranslationPriority.fromRank(priority),
 )
 
 internal fun TranslationJob.toEntity() = TranslationJobEntity(
@@ -103,4 +105,5 @@ internal fun TranslationJob.toEntity() = TranslationJobEntity(
     errorCode = errorCode?.name,
     createdAtMillis = createdAtMillis,
     updatedAtMillis = updatedAtMillis,
+    priority = priority.rank,
 )
