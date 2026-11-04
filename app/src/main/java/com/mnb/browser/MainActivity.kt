@@ -54,7 +54,7 @@ class MainActivity : ComponentActivity() {
     }
     // Phase 04-I10-C1: chapters are identified from the novel URL binding plus the chapter title.
     // Phase 04-I10-C2: every opened chapter is also reported to the background translation coordinator.
-    private val translationHolder by lazy {
+    private val translationHolder: ReaderTranslationStateHolder by lazy {
         ReaderTranslationStateHolder(
             BoundChapterIdentityResolver(novelBindings),
             chapterListener = { identity, content ->
@@ -104,7 +104,7 @@ class MainActivity : ComponentActivity() {
             scheduler = { WorkManagerTranslationScheduler(WorkManager.getInstance(applicationContext)) },
         )
     }
-    private val backgroundCoordinator by lazy {
+    private val backgroundCoordinator: ReaderBackgroundTranslationCoordinator by lazy {
         ReaderBackgroundTranslationCoordinator(
             currentChapterId = { translationHolder.current?.identity?.chapterId },
             bindingFor = { url -> novelBindings.find(url) },
