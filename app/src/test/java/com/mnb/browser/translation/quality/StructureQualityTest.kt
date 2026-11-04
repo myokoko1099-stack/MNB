@@ -43,7 +43,7 @@ class StructureQualityTest {
     @Test fun swappedParagraphsAreReportedAsMajor() {
         val result = checker.check(cleanInput(listOf(translated[1], translated[0], translated[2])))
         val order = result.allIssues.filter { it.type == QualityIssueType.PARAGRAPH_ORDER_MISMATCH }
-        assertEquals(listOf(0, 1), order.map { it.translationLocation!!.paragraphIndex }.sorted())
+        assertEquals(listOf(0, 1), order.map { it.translationLocation!!.paragraphIndex!! }.sorted())
         assertTrue(order.all { it.severity == QualitySeverity.MAJOR })
         assertEquals(CheckStatus.FAILED, result.structural)
     }
