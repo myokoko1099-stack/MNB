@@ -8,21 +8,27 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.work.WorkManager
 import com.mnb.browser.extraction.ExtractionController
 import com.mnb.browser.extraction.ExtractionStateManager
 import com.mnb.browser.navigation.NavigationController
 import com.mnb.browser.reader.ReaderPositionRepository
 import com.mnb.browser.reader.ReaderSettingsRepository
 import com.mnb.browser.reader.ReaderStateManager
+import com.mnb.browser.reader.translation.BackgroundTranslationWiring
 import com.mnb.browser.reader.translation.BoundChapterIdentityResolver
 import com.mnb.browser.reader.translation.InstantTranslationWiring
 import com.mnb.browser.reader.translation.LocalReaderTranslationActions
 import com.mnb.browser.reader.translation.NovelBindingStore
+import com.mnb.browser.reader.translation.ReaderBackgroundTranslationCoordinator
 import com.mnb.browser.reader.translation.ReaderInstantTranslationController
 import com.mnb.browser.reader.translation.ReaderTranslationStateHolder
 import com.mnb.browser.reader.translation.UnavailableReaderTranslationGateway
 import com.mnb.browser.reader.SharedPreferencesKeyValueStore
 import com.mnb.browser.state.BrowserStateManager
+import com.mnb.browser.translation.TranslationProvider
+import com.mnb.browser.translation.background.TranslationWorkEnvironment
+import com.mnb.browser.translation.background.WorkManagerTranslationScheduler
 import com.mnb.browser.translation.db.MnbDatabase
 import com.mnb.browser.ui.BrowserScreen
 import com.mnb.browser.web.FileWebSessionStore
@@ -47,8 +53,14 @@ class MainActivity : ComponentActivity() {
         NovelBindingStore(SharedPreferencesKeyValueStore(applicationContext))
     }
     // Phase 04-I10-C1: chapters are identified from the novel URL binding plus the chapter title.
-    private val translationHolder by lazy {
-        ReaderTranslationStateHolder(BoundChapterIdentityResolver(novelBindings))
+    // Phase 04-I10-C2: every opened chapter is also reported to the background translation coordinator.
+    private val translationHolder: ReaderTranslationStateHolder by lazy {
+        ReaderTranslationStateHolder(
+            BoundChapterIdentityResolver(novelBindings),
+            chapterListener = { identity, content ->
+                backgroundCoordinator.onChapterOpened(identity, content.url, content.mainText)
+            },
+        )
     }
     private val readerState by lazy { ReaderStateManager(translationHolder) }
     private val readerPositions by lazy {
@@ -57,6 +69,13 @@ class MainActivity : ComponentActivity() {
     private val readerSettings by lazy {
         ReaderSettingsRepository(SharedPreferencesKeyValueStore(applicationContext))
     }
+
+    // No real translation provider exists yet. MockTranslationProvider must NOT be returned here:
+    // null keeps every chapter at Unavailable(NOT_CONFIGURED), starts no background translation and
+    // opens neither the database nor WorkManager. When a real, non-mock provider is added, return it
+    // here AND set TranslationWorkEnvironment.providerFactory to the same provider (same id); the
+    // background coordinator refuses to start while the worker would use a different provider or a mock.
+    private val translationProviderSource: () -> TranslationProvider? = { null }
 
     // Instant translation runs on its own single background thread, never on the main thread.
     private val translationExecutorLazy: Lazy<ExecutorService> = lazy {
@@ -68,12 +87,31 @@ class MainActivity : ComponentActivity() {
             holder = translationHolder,
             bindings = novelBindings,
             gateway = UnavailableReaderTranslationGateway,
-            // No real translation provider exists yet. MockTranslationProvider must NOT be returned
-            // here: a null provider keeps every chapter at Unavailable(NOT_CONFIGURED) and the
-            // database is not opened. Supply a real, non-mock provider when one is available.
-            providerSource = { null },
+            providerSource = translationProviderSource,
             backendSource = { provider -> translationWiring.backendFor(provider) },
             executor = translationExecutorLazy.value,
+        )
+    }
+
+    // Phase 04-I10-C2: background translation follows reader navigation on its own single thread
+    // (database and queue work never run on the main thread).
+    private val backgroundExecutorLazy: Lazy<ExecutorService> = lazy {
+        Executors.newSingleThreadExecutor { r -> Thread(r, "mnb-background-translation").apply { isDaemon = true } }
+    }
+    private val backgroundWiring by lazy {
+        BackgroundTranslationWiring(
+            database = { MnbDatabase.getInstance(applicationContext) },
+            scheduler = { WorkManagerTranslationScheduler(WorkManager.getInstance(applicationContext)) },
+        )
+    }
+    private val backgroundCoordinator: ReaderBackgroundTranslationCoordinator by lazy {
+        ReaderBackgroundTranslationCoordinator(
+            currentChapterId = { translationHolder.current?.identity?.chapterId },
+            bindingFor = { url -> novelBindings.find(url) },
+            providerSource = translationProviderSource,
+            workerProviderSource = { TranslationWorkEnvironment.providerFactory() },
+            portsSource = { provider -> backgroundWiring.portsFor(provider) },
+            executor = backgroundExecutorLazy.value,
         )
     }
 
@@ -96,6 +134,8 @@ class MainActivity : ComponentActivity() {
     override fun onDestroy() {
         webController.destroy()
         if (translationExecutorLazy.isInitialized()) translationExecutorLazy.value.shutdownNow()
+        // WorkManager keeps its own work running; only this thread (the navigation sync) stops.
+        if (backgroundExecutorLazy.isInitialized()) backgroundExecutorLazy.value.shutdownNow()
         super.onDestroy()
     }
 }

@@ -21,10 +21,16 @@ data class ReaderChapterTranslation(
  *  - an update for any chapter other than the open one (for example a late result from a chapter
  *    the reader already left) is ignored.
  * [current] is Compose state, so a screen can read it directly. Updates may come from any thread.
+ *
+ * [chapterListener] (Phase 04-I10-C2, optional) is told about every opened chapter that has an
+ * identity, so background translation can follow reader navigation. It is called on the caller's
+ * thread while the holder is locked, so it must return quickly (hand the work to an executor) and
+ * must not call back into the holder; an exception it throws is ignored.
  */
 class ReaderTranslationStateHolder(
     private val resolver: ReaderChapterIdentityResolver = NoChapterIdentityResolver,
     private val gateway: ReaderTranslationGateway = UnavailableReaderTranslationGateway,
+    private val chapterListener: ((ReaderChapterIdentity, ExtractedContent) -> Unit)? = null,
 ) {
     /** The open chapter's translation, or null when no chapter is open. */
     var current: ReaderChapterTranslation? by mutableStateOf(null)
@@ -40,6 +46,13 @@ class ReaderTranslationStateHolder(
             )
         } else {
             ReaderChapterTranslation(identity, ReaderTranslationState.OriginalOnly)
+        }
+        if (identity != null) {
+            try {
+                chapterListener?.invoke(identity, content)
+            } catch (e: Exception) {
+                // Background translation must never break the reader.
+            }
         }
     }
 
