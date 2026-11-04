@@ -51,9 +51,11 @@ import com.mnb.browser.reader.ReaderPositionRepository
 import com.mnb.browser.reader.ReaderSettings
 import com.mnb.browser.reader.ReaderSettingsRepository
 import com.mnb.browser.reader.ReaderTheme
+import com.mnb.browser.reader.translation.LocalReaderTranslationActions
 import com.mnb.browser.reader.translation.ReaderChapterTranslation
 import com.mnb.browser.reader.translation.ReaderTranslationDisplay
 import com.mnb.browser.reader.translation.ReaderViewMode
+import com.mnb.browser.reader.translation.canRequestTranslation
 import kotlin.math.roundToInt
 
 /**
@@ -67,6 +69,10 @@ import kotlin.math.roundToInt
  * (null = no translation support, the reader works exactly as before). The original text is always
  * readable. The translated text is offered only when the state is Completed. The saved reading
  * position belongs to the original text and is never overwritten from the translated view.
+ *
+ * Instant translation (Phase 04-I10-C1): when a [LocalReaderTranslationActions] is provided, a
+ * "ဘာသာပြန်" button asks it to translate the open chapter; it is shown only while the chapter has
+ * an identity and its state allows a request. Without the local the reader is unchanged.
  */
 @Composable
 fun ReaderScreen(
@@ -105,6 +111,13 @@ fun ReaderScreen(
     val display = remember(translation?.state) { ReaderTranslationDisplay.of(translation?.state) }
     val mode = display.effectiveMode(requestedMode)
     val activeListState = if (mode == ReaderViewMode.TRANSLATION) translationListState else listState
+
+    // Instant translation (I10-C1): pick up an already stored translation when a chapter is shown.
+    val translationActions = LocalReaderTranslationActions.current
+    LaunchedEffect(chapterKey) { translationActions?.onChapterShown() }
+    val canRequestTranslation = translationActions != null &&
+        translation?.identity != null &&
+        translation.state.canRequestTranslation
 
     val progress by remember(activeListState) {
         derivedStateOf {
@@ -153,6 +166,11 @@ fun ReaderScreen(
                                 overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier.weight(1f).padding(end = 8.dp),
                             )
+                            if (canRequestTranslation) {
+                                TextButton(onClick = { translationActions?.requestTranslation(content) }) {
+                                    Text("ဘာသာပြန်")
+                                }
+                            }
                             TextButton(onClick = { showSettings = !showSettings }) { Text("Aa") }
                         }
                         if (showSettings) {
