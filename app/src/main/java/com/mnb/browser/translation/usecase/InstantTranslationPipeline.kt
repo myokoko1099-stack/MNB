@@ -24,7 +24,6 @@ import com.mnb.browser.translation.memory.TranslationContextProvider
 import com.mnb.browser.translation.quality.QualityInput
 import com.mnb.browser.translation.quality.QualityResult
 import com.mnb.browser.translation.quality.TranslationQualityChecker
-import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Instant (foreground, blocking) translation of one whole chapter.
@@ -37,6 +36,10 @@ import java.util.concurrent.ConcurrentHashMap
  * The original text is taken from [TranslateChapterRequest.originalText] (extraction happens
  * before this class). The source language comes from the request code; there is no auto-detection.
  * Call off the main thread. Not wired to any UI.
+ *
+ * (I10-D) One chapter is translated by one caller at a time across the whole process: the
+ * [lock] (default [ChapterTranslationLock.shared]) is shared with the background worker's pipeline,
+ * and a second caller gets [InstantTranslationFailure.DUPLICATE_REQUEST] without touching any data.
  */
 class InstantTranslationPipeline(
     private val provider: TranslationProvider,
@@ -47,9 +50,9 @@ class InstantTranslationPipeline(
     private val contextProvider: TranslationContextProvider = ContextRetriever(memory),
     private val checkQuality: (QualityInput) -> QualityResult = TranslationQualityChecker()::check,
     private val chunker: (ChapterId) -> ChunkingOutcome = chunkRepository::chunkChapter,
+    private val lock: ChapterTranslationLock = ChapterTranslationLock.shared,
 ) {
     private val service = TranslationService(provider)
-    private val inFlight: MutableSet<String> = ConcurrentHashMap.newKeySet<String>()
 
     /** [isCancelled] is checked before every chunk. Never throws for expected problems. */
     fun translate(
@@ -59,13 +62,13 @@ class InstantTranslationPipeline(
     ): InstantTranslationOutcome {
         require(nowMillis >= 0) { "nowMillis must not be negative" }
         val key = request.chapterId.value
-        if (!inFlight.add(key)) {
+        if (!lock.tryAcquire(request.chapterId)) {
             return fail(InstantTranslationFailure.DUPLICATE_REQUEST, "Chapter $key is already being translated")
         }
         try {
             return run(request, nowMillis, isCancelled)
         } finally {
-            inFlight.remove(key)
+            lock.release(request.chapterId)
         }
     }
 

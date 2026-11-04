@@ -1,0 +1,12 @@
+New (main)
+  app/src/main/java/com/mnb/browser/translation/usecase/ChapterTranslationLock.kt
+  app/src/main/java/com/mnb/browser/translation/background/TranslationWorkerGuard.kt
+Modified (main)
+  app/src/main/java/com/mnb/browser/translation/usecase/InstantTranslationPipeline.kt
+  app/src/main/java/com/mnb/browser/translation/background/TranslationWorker.kt   (incl. TranslationWorkEnvironment)
+  app/src/main/java/com/mnb/browser/translation/background/TranslationJobRunner.kt
+New (test)
+  app/src/test/java/com/mnb/browser/translation/background/TranslationWorkerProviderGuardTest.kt
+  app/src/test/java/com/mnb/browser/translation/background/InstantBackgroundConflictTest.kt
+Docs
+  I10-D-QA-REPORT.md
