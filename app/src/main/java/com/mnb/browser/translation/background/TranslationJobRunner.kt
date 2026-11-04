@@ -12,7 +12,14 @@ import com.mnb.browser.translation.usecase.InstantTranslationOutcome
 import com.mnb.browser.translation.usecase.InstantTranslationPipeline
 import com.mnb.browser.translation.usecase.TranslateChapterRequest
 
-enum class JobRunResult { SUCCESS, RETRY, FAILURE }
+enum class JobRunResult {
+    SUCCESS,
+    RETRY,
+    FAILURE,
+
+    /** (I9-B1) A pending job with higher priority, or queued earlier with the same priority, must start first. The job stays PENDING. */
+    DEFERRED,
+}
 
 /**
  * Runs one chapter job (the body of [TranslationWorker]) with [InstantTranslationPipeline] and keeps
@@ -23,6 +30,10 @@ enum class JobRunResult { SUCCESS, RETRY, FAILURE }
  * [maxAttempts] attempts are used, then FAILED. Permanent failures (empty text, unsupported
  * language, invalid chunks, missing chapter) are FAILED at once. A stop (isStopped) leaves the job
  * PENDING so the work can resume, unless the job was cancelled meanwhile.
+ *
+ * Priority (I9-B1): a PENDING job only starts when no other PENDING job outranks it (higher
+ * priority first, then FIFO). If one does, the runner waits up to [turnWaitMillis] for it to start
+ * and then returns [JobRunResult.DEFERRED]. A job that is already PROCESSING (resumed) is never held back.
  */
 class TranslationJobRunner(
     private val chapters: ChapterRepository,
@@ -30,6 +41,7 @@ class TranslationJobRunner(
     private val pipeline: InstantTranslationPipeline,
     private val clock: () -> Long = System::currentTimeMillis,
     private val maxAttempts: Int = DEFAULT_MAX_ATTEMPTS,
+    private val turnWaitMillis: Long = DEFAULT_TURN_WAIT_MILLIS,
 ) {
     /** [attempt] is the 0-based run attempt count (WorkManager's runAttemptCount). */
     fun run(
@@ -56,6 +68,8 @@ class TranslationJobRunner(
             TranslationStatus.FAILED -> return JobRunResult.FAILURE
             else -> Unit
         }
+
+        if (job.status == TranslationStatus.PENDING && !hasTurn(job, isStopped)) return JobRunResult.DEFERRED
 
         record(job, TranslationStatus.PROCESSING, job.completedChunks, null, null)
         val request = TranslateChapterRequest(
@@ -96,6 +110,26 @@ class TranslationJobRunner(
         }
     }
 
+    /**
+     * True when no other PENDING job outranks [job]. While one does, polls until [turnWaitMillis]
+     * has passed (that job is normally about to start) and then gives up. A database error here
+     * does not block the job: ordering is best effort.
+     */
+    private fun hasTurn(job: TranslationJob, isStopped: () -> Boolean): Boolean {
+        val deadline = System.nanoTime() + turnWaitMillis * NANOS_PER_MILLI
+        while (true) {
+            val blocked = try { jobs.hasOutrankingPendingJob(job) } catch (e: Exception) { false }
+            if (!blocked) return true
+            if (isStopped() || System.nanoTime() >= deadline) return false
+            try {
+                Thread.sleep(TURN_POLL_MILLIS)
+            } catch (e: InterruptedException) {
+                Thread.currentThread().interrupt()
+                return false
+            }
+        }
+    }
+
     private fun retryOrFail(job: TranslationJob?, attempt: Int, error: TranslationError?, completed: Int, total: Int?): JobRunResult {
         val last = attempt + 1 >= maxAttempts
         if (job != null) {
@@ -124,6 +158,11 @@ class TranslationJobRunner(
 
     companion object {
         const val DEFAULT_MAX_ATTEMPTS = 5
+
+        /** How long a job waits for an outranking job to start before it is deferred. */
+        const val DEFAULT_TURN_WAIT_MILLIS = 2_000L
+        private const val TURN_POLL_MILLIS = 100L
+        private const val NANOS_PER_MILLI = 1_000_000L
 
         /** False for problems a retry cannot fix. */
         fun isRetryable(reason: InstantTranslationFailure): Boolean = when (reason) {

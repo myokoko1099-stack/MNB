@@ -1,9 +1,11 @@
 package com.mnb.browser.translation.db
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import com.mnb.browser.translation.TranslationPriority
 
 /*
  * Room rows. Enums and ids are stored as plain Strings/Longs so the schema does not depend on
@@ -96,6 +98,10 @@ data class TranslationChunkEntity(
     val providerId: String?,
 )
 
+/**
+ * [priority] (since database version 3) is a [TranslationPriority] rank stored as a number so the
+ * queue can sort on it in SQL; rows that existed before version 3 are NORMAL (1).
+ */
 @Entity(
     tableName = "translation_jobs",
     foreignKeys = [
@@ -117,4 +123,5 @@ data class TranslationJobEntity(
     val errorCode: String?,
     val createdAtMillis: Long,
     val updatedAtMillis: Long,
+    @ColumnInfo(defaultValue = "1") val priority: Int = TranslationPriority.NORMAL.rank,
 )

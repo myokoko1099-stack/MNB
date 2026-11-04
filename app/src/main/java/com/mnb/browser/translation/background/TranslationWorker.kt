@@ -37,7 +37,8 @@ class TranslationWorker(context: Context, params: WorkerParameters) : Worker(con
         )
         return when (result) {
             JobRunResult.SUCCESS -> ListenableWorker.Result.success()
-            JobRunResult.RETRY -> ListenableWorker.Result.retry()
+            // DEFERRED (I9-B1): an outranking job starts first; WorkManager tries this work again later.
+            JobRunResult.RETRY, JobRunResult.DEFERRED -> ListenableWorker.Result.retry()
             JobRunResult.FAILURE -> ListenableWorker.Result.failure()
         }
     }

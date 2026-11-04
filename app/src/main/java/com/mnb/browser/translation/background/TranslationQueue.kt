@@ -3,6 +3,7 @@ package com.mnb.browser.translation.background
 import com.mnb.browser.translation.ChapterId
 import com.mnb.browser.translation.TargetLanguage
 import com.mnb.browser.translation.TranslationJob
+import com.mnb.browser.translation.TranslationPriority
 import com.mnb.browser.translation.TranslationStatus
 import com.mnb.browser.translation.db.ChapterRepository
 import com.mnb.browser.translation.db.StoredTranslation
@@ -28,6 +29,11 @@ sealed interface EnqueueResult {
 /**
  * Background translation queue: one job row (database status) plus one unique WorkManager work per
  * chapter. Blocking: call off the main thread. The chapter's original text must already be stored.
+ *
+ * Priority (I9-B1): each new job gets a [TranslationPriority] (NORMAL by default). Waiting jobs
+ * start highest priority first and FIFO within the same priority; [TranslationJobRunner] enforces
+ * that order when a job's work starts. The priority is fixed when the job is created: enqueueing a
+ * chapter that already has an unfinished job never changes that job's priority.
  */
 class TranslationQueue(
     private val chapters: ChapterRepository,
@@ -42,6 +48,7 @@ class TranslationQueue(
         chapterId: ChapterId,
         sourceLanguageCode: String?,
         targetLanguageCode: String = TargetLanguage.MYANMAR.code,
+        priority: TranslationPriority = TranslationPriority.NORMAL,
     ): EnqueueResult {
         return try {
             if (chapters.get(chapterId) == null) return EnqueueResult.ChapterNotFound
@@ -56,11 +63,11 @@ class TranslationQueue(
             val latest = jobs.latestForChapter(chapterId)
             if (latest != null && !latest.status.isFinished) {
                 if (scheduler.isScheduled(chapterId)) return EnqueueResult.AlreadyQueued(latest)
-                // Row says unfinished but no live work exists: reuse the row, schedule again.
+                // Row says unfinished but no live work exists: reuse the row (and its priority), schedule again.
                 scheduler.schedule(chapterId, sourceLanguageCode, targetLanguageCode)
                 return EnqueueResult.Enqueued(latest)
             }
-            val job = jobs.create(chapterId, 0, clock())
+            val job = jobs.create(chapterId, 0, clock(), priority)
             scheduler.schedule(chapterId, sourceLanguageCode, targetLanguageCode)
             EnqueueResult.Enqueued(job)
         } catch (e: Exception) {

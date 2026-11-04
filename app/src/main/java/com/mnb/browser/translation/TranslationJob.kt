@@ -2,7 +2,8 @@ package com.mnb.browser.translation
 
 /**
  * Progress record for translating one chapter, kept so unfinished work can be resumed after the
- * app is closed. [jobId] is 0 until the job has been stored.
+ * app is closed. [jobId] is 0 until the job has been stored. [priority] decides which waiting job
+ * starts first (Phase 04-I9-B1).
  */
 data class TranslationJob(
     val jobId: Long,
@@ -13,6 +14,7 @@ data class TranslationJob(
     val completedChunks: Int = 0,
     val status: TranslationStatus = TranslationStatus.PENDING,
     val errorCode: TranslationError? = null,
+    val priority: TranslationPriority = TranslationPriority.NORMAL,
 ) {
     init {
         require(jobId >= 0) { "jobId must not be negative" }

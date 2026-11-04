@@ -89,6 +89,21 @@ interface TranslationJobDao {
     @Query("SELECT * FROM translation_jobs WHERE status IN ('PENDING', 'PROCESSING') ORDER BY createdAtMillis, jobId")
     fun unfinished(): List<TranslationJobEntity>
 
+    /**
+     * PENDING jobs in start order (I9-B1): higher priority first, then FIFO. FIFO uses jobId (the
+     * insertion order) rather than createdAtMillis, so equal or out-of-order clock values cannot
+     * reorder jobs.
+     */
+    @Query("SELECT * FROM translation_jobs WHERE status = 'PENDING' ORDER BY priority DESC, jobId ASC")
+    fun pendingInRunOrder(): List<TranslationJobEntity>
+
+    /** How many PENDING jobs must start before a job with this [jobId] and [priority] (I9-B1). */
+    @Query(
+        "SELECT COUNT(*) FROM translation_jobs WHERE status = 'PENDING' " +
+            "AND (priority > :priority OR (priority = :priority AND jobId < :jobId))",
+    )
+    fun countOutranking(jobId: Long, priority: Int): Int
+
     @Query(
         "UPDATE translation_jobs SET status = 'CANCELLED', updatedAtMillis = :nowMillis " +
             "WHERE chapterId = :chapterId AND status IN ('PENDING', 'PROCESSING')",
