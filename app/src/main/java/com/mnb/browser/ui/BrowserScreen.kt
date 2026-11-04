@@ -176,6 +176,7 @@ fun BrowserScreen(
                     positions = readerPositions,
                     settingsRepository = readerSettings,
                     onClose = { readerState.close() },
+                    translation = readerState.translation?.current,
                 )
             }
         }
