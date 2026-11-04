@@ -28,7 +28,8 @@ class TranslationJobRepository(private val db: MnbDatabase) {
 
     /**
      * Updates a job's status and progress. Returns false when the job does not exist. Throws
-     * IllegalArgumentException when [completedChunks] is outside 0..totalChunks.
+     * IllegalArgumentException when [completedChunks] is outside 0..totalChunks. [totalChunks]
+     * (I9-A) sets the chunk count once it is known; null keeps the stored value.
      */
     fun updateProgress(
         jobId: Long,
@@ -36,10 +37,13 @@ class TranslationJobRepository(private val db: MnbDatabase) {
         completedChunks: Int,
         nowMillis: Long,
         errorCode: TranslationError? = null,
+        totalChunks: Int? = null,
     ): Boolean = db.runInTransaction(
         Callable<Boolean> {
             val existing = dao.get(jobId) ?: return@Callable false
-            val updated = existing.toModel().copy(
+            val base = existing.toModel()
+            val updated = base.copy(
+                totalChunks = totalChunks ?: base.totalChunks,
                 status = status,
                 completedChunks = completedChunks,
                 errorCode = errorCode,
