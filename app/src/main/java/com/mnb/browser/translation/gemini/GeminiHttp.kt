@@ -13,16 +13,25 @@ class GeminiHttpRequest(
     override fun toString(): String = "GeminiHttpRequest(***)"
 }
 
-/** What came back. [toString] leaves the body out (an error body is never shown or logged). */
+/**
+ * What came back. [toString] leaves the body out (an error body is never shown or logged).
+ * [retryAfterMillis] is the wait the server asked for with a `Retry-After` header (Phase 06-B3),
+ * or null when there was none.
+ */
 class GeminiHttpResponse(
     val statusCode: Int,
     val body: String,
+    val retryAfterMillis: Long? = null,
 ) {
     override fun toString(): String = "GeminiHttpResponse(status=$statusCode)"
 }
 
 /** Why no HTTP response was received. Codes only: no exception message is kept. */
 enum class GeminiHttpFailure {
+    /** The connection could not be opened in time (connect timeout). */
+    CONNECT_TIMEOUT,
+
+    /** The connection was open but the answer did not arrive in time (read timeout). */
     TIMEOUT,
     NO_CONNECTION,
     TLS,

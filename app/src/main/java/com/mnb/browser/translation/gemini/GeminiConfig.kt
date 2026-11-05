@@ -13,6 +13,7 @@ data class GeminiConfig(
     val connectTimeoutMillis: Int = DEFAULT_CONNECT_TIMEOUT_MILLIS,
     val readTimeoutMillis: Int = DEFAULT_READ_TIMEOUT_MILLIS,
     val temperature: Double = DEFAULT_TEMPERATURE,
+    val retryPolicy: GeminiRetryPolicy = GeminiRetryPolicy(),
 ) {
     init {
         require(MODEL_PATTERN.matches(model)) { "Invalid Gemini model name" }
