@@ -76,9 +76,9 @@ class AesGcmCipherTest {
     @Test fun decryptWithoutKeyFailsAndNeverCreatesOne() {
         val provider = SoftwareKeyProvider()
         val envelope = cipher(provider).encrypt(plain)
-        provider.key = null
+        provider.secretKey = null
         assertReason(CipherException.Reason.KEY_UNAVAILABLE) { cipher(provider).decrypt(envelope) }
-        assertNull(provider.key)
+        assertNull(provider.secretKey)
     }
 
     @Test fun malformedEnvelopesAreRejected() {
@@ -119,7 +119,7 @@ class AesGcmCipherTest {
         val c = cipher(provider)
         val envelope = c.encrypt(plain)
         c.deleteKey()
-        assertTrue(provider.key == null)
+        assertTrue(provider.secretKey == null)
         assertReason(CipherException.Reason.KEY_UNAVAILABLE) { c.decrypt(envelope) }
     }
 }

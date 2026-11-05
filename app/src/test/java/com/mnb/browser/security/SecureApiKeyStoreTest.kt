@@ -94,7 +94,7 @@ class SecureApiKeyStoreTest {
         assertOk(store.delete())
         assertFalse(store.hasKey())
         assertNull(storage.blob)
-        assertNull(provider.key)
+        assertNull(provider.secretKey)
         assertFailure(SecureStorageError.NOT_FOUND, store.read())
     }
 
@@ -113,7 +113,7 @@ class SecureApiKeyStoreTest {
         store.save(TEST_API_KEY)
         storage.failClear = true
         assertFailure(SecureStorageError.STORAGE_FAILURE, store.delete())
-        assertNotNull(provider.key)
+        assertNotNull(provider.secretKey)
         assertEquals(TEST_API_KEY, readKey())
     }
 
@@ -176,22 +176,22 @@ class SecureApiKeyStoreTest {
 
     @Test fun missingKeystoreKeyWithDataPresentIsKeyUnavailable() {
         store.save(TEST_API_KEY)
-        provider.key = null
+        provider.secretKey = null
         assertFailure(SecureStorageError.KEY_UNAVAILABLE, store.read())
         assertTrue(store.hasKey())
-        assertNull(provider.key) // reading never invents a key
+        assertNull(provider.secretKey) // reading never invents a key
     }
 
     @Test fun keyUnavailableIsRecoverableBySavingAgain() {
         store.save(TEST_API_KEY)
-        provider.key = null
+        provider.secretKey = null
         assertOk(store.save("AIzaSyRECOVERED-key"))
         assertEquals("AIzaSyRECOVERED-key", readKey())
     }
 
     @Test fun keyFromADifferentKeystoreKeyIsADecryptionFailure() {
         store.save(TEST_API_KEY)
-        provider.key = newSoftwareKey()
+        provider.secretKey = newSoftwareKey()
         assertFailure(SecureStorageError.DECRYPTION_FAILED, store.read())
     }
 

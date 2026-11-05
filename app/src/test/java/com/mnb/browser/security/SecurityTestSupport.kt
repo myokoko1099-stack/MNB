@@ -11,18 +11,18 @@ fun newSoftwareKey(): SecretKey =
     KeyGenerator.getInstance("AES").apply { init(256) }.generateKey()
 
 /** JVM stand-in for the Android Keystore (which does not exist in unit tests). */
-class SoftwareKeyProvider(var key: SecretKey? = null) : KeyProvider {
+class SoftwareKeyProvider(var secretKey: SecretKey? = null) : KeyProvider {
     var deleteCalls = 0
     var failDelete = false
 
-    override fun getKey(): SecretKey? = key
+    override fun getKey(): SecretKey? = secretKey
 
-    override fun getOrCreateKey(): SecretKey = key ?: newSoftwareKey().also { key = it }
+    override fun getOrCreateKey(): SecretKey = secretKey ?: newSoftwareKey().also { secretKey = it }
 
     override fun deleteKey() {
         if (failDelete) throw IllegalStateException("delete failed")
         deleteCalls++
-        key = null
+        secretKey = null
     }
 }
 
