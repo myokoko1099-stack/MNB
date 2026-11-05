@@ -70,7 +70,7 @@ class AesGcmCipherTest {
 
     @Test fun anotherKeyCannotDecrypt() {
         val envelope = cipher(SoftwareKeyProvider()).encrypt(plain)
-        assertReason(CipherException.Reason.DECRYPT_FAILED) { cipher(SoftwareKeyProvider()).decrypt(envelope) }
+        assertReason(CipherException.Reason.DECRYPT_FAILED) { cipher(SoftwareKeyProvider(newSoftwareKey())).decrypt(envelope) }
     }
 
     @Test fun decryptWithoutKeyFailsAndNeverCreatesOne() {
