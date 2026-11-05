@@ -24,6 +24,8 @@ import com.mnb.browser.reader.translation.ReaderBackgroundTranslationCoordinator
 import com.mnb.browser.reader.translation.ReaderInstantTranslationController
 import com.mnb.browser.reader.translation.ReaderTranslationStateHolder
 import com.mnb.browser.reader.translation.UnavailableReaderTranslationGateway
+import com.mnb.browser.security.SecureApiKeyStore
+import com.mnb.browser.settings.GeminiKeySettingsController
 import com.mnb.browser.reader.SharedPreferencesKeyValueStore
 import com.mnb.browser.state.BrowserStateManager
 import com.mnb.browser.translation.TranslationProvider
@@ -31,6 +33,7 @@ import com.mnb.browser.translation.background.TranslationWorkEnvironment
 import com.mnb.browser.translation.background.WorkManagerTranslationScheduler
 import com.mnb.browser.translation.db.MnbDatabase
 import com.mnb.browser.ui.BrowserScreen
+import com.mnb.browser.ui.LocalGeminiKeySettings
 import com.mnb.browser.web.FileWebSessionStore
 import com.mnb.browser.web.WebViewController
 import java.io.File
@@ -115,11 +118,27 @@ class MainActivity : ComponentActivity() {
         )
     }
 
+    // Phase 06-A2: Gemini API key settings. The Phase 06-A1 secure store is created and used only on
+    // this single background thread (Keystore and file work never run on the main thread). Nothing
+    // reads the key for any request yet: no Gemini client is connected in this phase.
+    private val geminiKeyExecutorLazy: Lazy<ExecutorService> = lazy {
+        Executors.newSingleThreadExecutor { r -> Thread(r, "mnb-gemini-key-settings").apply { isDaemon = true } }
+    }
+    private val geminiKeySettings by lazy {
+        GeminiKeySettingsController(
+            storeFactory = { SecureApiKeyStore.create(applicationContext) },
+            executor = geminiKeyExecutorLazy.value,
+        )
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
             MaterialTheme(colorScheme = if (isSystemInDarkTheme()) darkColorScheme() else lightColorScheme()) {
-                CompositionLocalProvider(LocalReaderTranslationActions provides translationController) {
+                CompositionLocalProvider(
+                    LocalReaderTranslationActions provides translationController,
+                    LocalGeminiKeySettings provides geminiKeySettings,
+                ) {
                     BrowserScreen(
                         stateManager, webController, navigation, extraction, extractionState,
                         readerState, readerPositions, readerSettings,
@@ -136,6 +155,7 @@ class MainActivity : ComponentActivity() {
         if (translationExecutorLazy.isInitialized()) translationExecutorLazy.value.shutdownNow()
         // WorkManager keeps its own work running; only this thread (the navigation sync) stops.
         if (backgroundExecutorLazy.isInitialized()) backgroundExecutorLazy.value.shutdownNow()
+        if (geminiKeyExecutorLazy.isInitialized()) geminiKeyExecutorLazy.value.shutdownNow()
         super.onDestroy()
     }
 }
