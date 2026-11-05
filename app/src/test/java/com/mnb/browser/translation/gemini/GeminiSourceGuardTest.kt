@@ -8,8 +8,8 @@ import org.junit.Test
 
 /**
  * Phase 06-B1: a scan of the gemini sources. It fails if logging, cleartext HTTP, a key in a URL,
- * or a second reader of the plain key is added. It also checks that the provider is still not
- * wired into the app (that is a later session's job).
+ * or a second reader of the plain key is added. Phase 06-B2 wired the provider into the app: it
+ * also checks that only MainActivity (the wiring point) uses the gemini package.
  */
 class GeminiSourceGuardTest {
 
@@ -81,7 +81,7 @@ class GeminiSourceGuardTest {
     }
 
     @Test
-    fun theProviderIsNotWiredIntoTheAppYet() {
+    fun onlyMainActivityUsesTheGeminiPackage() {
         val root = mainSourceRoot()
         val users = root.walkTopDown()
             .filter { it.isFile && it.extension == "kt" && it.parentFile?.name != "gemini" }
@@ -91,7 +91,7 @@ class GeminiSourceGuardTest {
             }
             .map { it.name }
             .toList()
-        assertTrue("unexpected users of the Gemini provider: $users", users.isEmpty())
+        assertEquals("unexpected users of the Gemini provider: $users", listOf("MainActivity.kt"), users)
     }
 
     // ================= helpers =================
