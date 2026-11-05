@@ -84,7 +84,7 @@ class GeminiSourceGuardTest {
     fun theProviderIsNotWiredIntoTheAppYet() {
         val root = mainSourceRoot()
         val users = root.walkTopDown()
-            .filter { it.isFile && it.extension == "kt" && it.parentFile.name != "gemini" }
+            .filter { it.isFile && it.extension == "kt" && it.parentFile?.name != "gemini" }
             .filter { file ->
                 val text = file.readText()
                 text.contains("DirectGeminiProvider") || text.contains("translation.gemini")
