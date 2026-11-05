@@ -70,6 +70,10 @@ data class GeminiKeySettingsState(
  * store and is not kept.
  *
  * [storeFactory] runs lazily, on the executor, the first time the store is needed.
+ *
+ * Phase 06-A3 hardening: state changes are made under one lock (the UI thread and the executor
+ * both write it); a delete is reported as done only after the storage is checked again; any
+ * unexpected failure on the executor ends in a fixed message code, never a crash or exception text.
  */
 class GeminiKeySettingsController(
     storeFactory: () -> ApiKeyStore,
@@ -80,9 +84,22 @@ class GeminiKeySettingsController(
     var state: GeminiKeySettingsState by mutableStateOf(GeminiKeySettingsState())
         private set
 
+    private val stateLock = Any()
+
+    /**
+     * Applies [transform] to the state as one step. Only cheap work goes inside: Keystore and file
+     * work is always done before the call, so the UI thread is never blocked behind it.
+     */
+    private fun update(transform: (GeminiKeySettingsState) -> GeminiKeySettingsState) {
+        synchronized(stateLock) { state = transform(state) }
+    }
+
     /** Re-reads whether a key is stored (and whether it can still be decrypted). */
     fun refresh() {
-        launch { state = state.copy(status = checkStatus()) }
+        launch(failureMessage = null) {
+            val status = checkStatus()
+            update { it.copy(status = status) }
+        }
     }
 
     /**
@@ -90,51 +107,60 @@ class GeminiKeySettingsController(
      * Invalid text (empty, too long, spaces or non-ASCII) is rejected by the store.
      */
     fun save(input: String) {
-        launch {
+        launch(GeminiKeyMessage.SAVE_FAILED) {
             val replacing = state.status == GeminiKeyStatus.SAVED
             var result = if (replacing) store.update(input) else store.save(input)
             if (replacing && result is SecureResult.Failure && result.error == SecureStorageError.NOT_FOUND) {
                 // The stored key disappeared since the last check; fall back to a plain save.
                 result = store.save(input)
             }
-            when (result) {
-                is SecureResult.Success -> state = state.copy(
-                    status = checkStatus(),
-                    message = if (replacing) GeminiKeyMessage.UPDATED else GeminiKeyMessage.SAVED,
-                    completedChanges = state.completedChanges + 1,
-                )
-                is SecureResult.Failure -> state = state.copy(
-                    status = checkStatus(),
-                    message = if (result.error == SecureStorageError.INVALID_INPUT) {
-                        GeminiKeyMessage.INVALID_INPUT
-                    } else {
-                        GeminiKeyMessage.SAVE_FAILED
-                    },
-                )
+            // A failed save or update never touches the stored key, so the status is read again
+            // from the storage to show what is really there.
+            val status = checkStatus()
+            val outcome = result
+            if (outcome is SecureResult.Success) {
+                update {
+                    it.copy(
+                        status = status,
+                        message = if (replacing) GeminiKeyMessage.UPDATED else GeminiKeyMessage.SAVED,
+                        completedChanges = it.completedChanges + 1,
+                    )
+                }
+            } else {
+                val message = if ((outcome as SecureResult.Failure).error == SecureStorageError.INVALID_INPUT) {
+                    GeminiKeyMessage.INVALID_INPUT
+                } else {
+                    GeminiKeyMessage.SAVE_FAILED
+                }
+                update { it.copy(status = status, message = message) }
             }
         }
     }
 
     /** Removes the stored key. Succeeds when nothing is stored. */
     fun delete() {
-        launch {
-            when (store.delete()) {
-                is SecureResult.Success -> state = state.copy(
-                    status = GeminiKeyStatus.NOT_SET,
-                    message = GeminiKeyMessage.DELETED,
-                    completedChanges = state.completedChanges + 1,
-                )
-                is SecureResult.Failure -> state = state.copy(
-                    status = checkStatus(),
-                    message = GeminiKeyMessage.DELETE_FAILED,
-                )
+        launch(GeminiKeyMessage.DELETE_FAILED) {
+            val deleted = store.delete() is SecureResult.Success
+            // Do not trust the result alone: look at the storage again, so the screen only says
+            // "deleted" when nothing is stored any more.
+            val status = checkStatus()
+            if (deleted && status == GeminiKeyStatus.NOT_SET) {
+                update {
+                    it.copy(
+                        status = GeminiKeyStatus.NOT_SET,
+                        message = GeminiKeyMessage.DELETED,
+                        completedChanges = it.completedChanges + 1,
+                    )
+                }
+            } else {
+                update { it.copy(status = status, message = GeminiKeyMessage.DELETE_FAILED) }
             }
         }
     }
 
     /** Hides the last message (the UI calls this when the user edits the input). */
     fun clearMessage() {
-        if (state.message != null) state = state.copy(message = null)
+        update { if (it.message != null) it.copy(message = null) else it }
     }
 
     /**
@@ -151,22 +177,41 @@ class GeminiKeySettingsController(
         }
     }
 
-    private fun launch(block: () -> Unit) {
-        if (state.busy) return
-        state = state.copy(busy = true)
+    /**
+     * Runs [block] on the executor unless another operation is running. If [block] fails
+     * unexpectedly the state gets [failureMessage] (or no message when null), and the first check
+     * is not left on "Checking" forever. Only [VirtualMachineError] (e.g. out of memory) is not
+     * swallowed.
+     */
+    private fun launch(failureMessage: GeminiKeyMessage?, block: () -> Unit) {
+        val started = synchronized(stateLock) {
+            if (state.busy) {
+                false
+            } else {
+                state = state.copy(busy = true)
+                true
+            }
+        }
+        if (!started) return
         try {
             executor.execute {
                 try {
                     block()
-                } catch (e: Exception) {
+                } catch (e: Throwable) {
+                    if (e is VirtualMachineError) throw e
                     // Deliberately no message, cause or stack trace: it could mention the key.
-                    state = state.copy(message = GeminiKeyMessage.SAVE_FAILED)
+                    update {
+                        it.copy(
+                            status = if (it.status == GeminiKeyStatus.CHECKING) GeminiKeyStatus.UNREADABLE else it.status,
+                            message = failureMessage ?: it.message,
+                        )
+                    }
                 } finally {
-                    state = state.copy(busy = false)
+                    update { it.copy(busy = false) }
                 }
             }
         } catch (e: RejectedExecutionException) {
-            state = state.copy(busy = false)
+            update { it.copy(busy = false) }
         }
     }
 }
