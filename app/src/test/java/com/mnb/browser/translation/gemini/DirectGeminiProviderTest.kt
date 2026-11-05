@@ -237,6 +237,7 @@ class DirectGeminiProviderTest {
     @Test
     fun transportFailuresMapToFixedErrors() {
         val table = mapOf(
+            GeminiHttpFailure.CONNECT_TIMEOUT to GeminiError.CONNECT_TIMEOUT,
             GeminiHttpFailure.TIMEOUT to GeminiError.TIMEOUT,
             GeminiHttpFailure.NO_CONNECTION to GeminiError.NETWORK_UNAVAILABLE,
             GeminiHttpFailure.IO to GeminiError.NETWORK_UNAVAILABLE,

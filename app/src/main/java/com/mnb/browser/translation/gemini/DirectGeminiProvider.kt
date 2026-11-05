@@ -34,9 +34,18 @@ interface GeminiProvider {
  */
 class DirectGeminiProvider(
     private val keys: ApiKeyProvider,
-    private val http: GeminiHttpClient = HttpUrlConnectionGeminiClient(),
+    http: GeminiHttpClient? = null,
     private val config: GeminiConfig = GeminiConfig(),
 ) : GeminiProvider {
+
+    /**
+     * Phase 06-B3: without an injected client the real one is used, with the timeouts of [config]
+     * and wrapped in the bounded retry of [GeminiConfig.retryPolicy].
+     */
+    private val http: GeminiHttpClient = http ?: RetryingGeminiHttpClient(
+        HttpUrlConnectionGeminiClient(config.connectTimeoutMillis, config.readTimeoutMillis),
+        config.retryPolicy,
+    )
 
     override val id: String = ID
     override val model: String = config.model
@@ -91,6 +100,7 @@ class DirectGeminiProvider(
     }
 
     private fun errorFor(failure: GeminiHttpFailure): GeminiError = when (failure) {
+        GeminiHttpFailure.CONNECT_TIMEOUT -> GeminiError.CONNECT_TIMEOUT
         GeminiHttpFailure.TIMEOUT -> GeminiError.TIMEOUT
         GeminiHttpFailure.NO_CONNECTION -> GeminiError.NETWORK_UNAVAILABLE
         GeminiHttpFailure.IO -> GeminiError.NETWORK_UNAVAILABLE

@@ -59,13 +59,31 @@ internal object GeminiResponseParser {
 
     /** [body] is the body of a non-2xx response; it is only inspected, never returned. */
     fun errorForStatus(statusCode: Int, body: String): GeminiError = when {
-        statusCode == 401 || statusCode == 403 -> GeminiError.API_KEY_REJECTED
-        statusCode == 429 -> GeminiError.RATE_LIMITED
+        statusCode == 401 -> GeminiError.API_KEY_REJECTED
+        statusCode == 403 -> if (isPermissionDenied(body)) GeminiError.PERMISSION_DENIED else GeminiError.API_KEY_REJECTED
+        statusCode == 429 -> if (isQuotaExhausted(body)) GeminiError.QUOTA_EXCEEDED else GeminiError.RATE_LIMITED
         statusCode == 404 -> GeminiError.MODEL_NOT_FOUND
         statusCode == 400 -> if (namesTheKey(body)) GeminiError.API_KEY_REJECTED else GeminiError.BAD_REQUEST
         statusCode in 500..599 -> GeminiError.SERVER_ERROR
         else -> GeminiError.BAD_REQUEST
     }
+
+    /**
+     * A 403 is a key problem unless Gemini says it is a permission problem that does not name the
+     * key (for example the API is not enabled for the project).
+     */
+    private fun isPermissionDenied(body: String): Boolean =
+        body.contains("PERMISSION_DENIED") &&
+            !body.contains("API key", ignoreCase = true) &&
+            !body.contains("API_KEY")
+
+    /**
+     * A 429 is a used-up quota (not a short rate limit) when Gemini names a per-day quota or a
+     * limit of 0. Waiting a few seconds does not help then.
+     */
+    private fun isQuotaExhausted(body: String): Boolean =
+        body.contains("PerDay") || body.contains("per day", ignoreCase = true) ||
+            body.contains("limit: 0")
 
     /** Gemini answers a bad key with HTTP 400 and an error that names the key. */
     private fun namesTheKey(body: String): Boolean =

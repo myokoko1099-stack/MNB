@@ -40,6 +40,8 @@ class HttpUrlConnectionGeminiClient(
         }
 
         var opened: HttpURLConnection? = null
+        // True until the connection is open: a timeout in that phase is a connect timeout, later a read timeout.
+        var connecting = true
         return try {
             val connection = url.openConnection() as HttpURLConnection
             opened = connection
@@ -55,6 +57,8 @@ class HttpUrlConnectionGeminiClient(
 
             val bytes = request.body.toByteArray(Charsets.UTF_8)
             connection.setFixedLengthStreamingMode(bytes.size)
+            connection.connect()
+            connecting = false
             connection.outputStream.use { it.write(bytes) }
 
             val status = connection.responseCode
@@ -63,10 +67,15 @@ class HttpUrlConnectionGeminiClient(
             if (body == null) {
                 GeminiHttpResult.Failure(GeminiHttpFailure.TOO_LARGE)
             } else {
-                GeminiHttpResult.Response(GeminiHttpResponse(status, body))
+                val retryAfter = if (status in 200..299) {
+                    null
+                } else {
+                    GeminiRetryAfter.parseHeader(connection.getHeaderField("Retry-After"), System.currentTimeMillis())
+                }
+                GeminiHttpResult.Response(GeminiHttpResponse(status, body, retryAfter))
             }
         } catch (e: SocketTimeoutException) {
-            GeminiHttpResult.Failure(GeminiHttpFailure.TIMEOUT)
+            GeminiHttpResult.Failure(if (connecting) GeminiHttpFailure.CONNECT_TIMEOUT else GeminiHttpFailure.TIMEOUT)
         } catch (e: UnknownHostException) {
             GeminiHttpResult.Failure(GeminiHttpFailure.NO_CONNECTION)
         } catch (e: ConnectException) {

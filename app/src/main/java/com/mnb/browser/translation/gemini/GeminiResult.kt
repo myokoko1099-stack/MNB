@@ -18,8 +18,14 @@ enum class GeminiError(val message: String, val retryable: Boolean) {
     /** Gemini refused the key (HTTP 401 / 403, or a 400 that names the key). */
     API_KEY_REJECTED("Gemini did not accept the API key. Check the key in Settings.", false),
 
-    /** HTTP 429: too many requests or the quota is used up. */
-    RATE_LIMITED("Gemini reports too many requests or no quota left. Try again later.", true),
+    /** Gemini refused the request for a reason other than the key (HTTP 403, e.g. the API is not enabled). */
+    PERMISSION_DENIED("Gemini does not allow this request. Check that the Gemini API is enabled for your key.", false),
+
+    /** HTTP 429: too many requests per minute. Waiting a little helps. */
+    RATE_LIMITED("Gemini reports too many requests. Try again in a moment.", true),
+
+    /** HTTP 429 because the user's own quota (for example the daily one) is used up. Waiting a little does not help. */
+    QUOTA_EXCEEDED("Your Gemini API quota is used up. Try again later or check your plan.", false),
 
     /** HTTP 404: the model name is not known to Gemini. */
     MODEL_NOT_FOUND("The Gemini model was not found.", false),
@@ -32,6 +38,10 @@ enum class GeminiError(val message: String, val retryable: Boolean) {
 
     NETWORK_UNAVAILABLE("Could not reach Gemini. Check the internet connection.", true),
 
+    /** The connection to Gemini could not be opened in time. */
+    CONNECT_TIMEOUT("Could not connect to Gemini in time.", true),
+
+    /** Gemini was reached but took too long to answer. */
     TIMEOUT("Gemini took too long to answer.", true),
 
     SECURE_CONNECTION_FAILED("A secure connection to Gemini could not be made.", false),
