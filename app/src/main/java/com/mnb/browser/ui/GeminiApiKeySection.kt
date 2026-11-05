@@ -15,6 +15,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -22,11 +23,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import com.mnb.browser.settings.GeminiKeyMessage
 import com.mnb.browser.settings.GeminiKeySettingsController
 import com.mnb.browser.settings.GeminiKeyStatus
@@ -49,6 +53,9 @@ val LocalGeminiKeySettings = staticCompositionLocalOf<GeminiKeySettingsControlle
  *   line only says whether a key exists.
  * - Messages are chosen from fixed texts by code, so no error text (which could contain key
  *   material) is ever shown.
+ * - Phase 06-A3: the activity handles configuration changes itself, so it is not recreated on
+ *   rotation. The typed text is therefore hidden as soon as the screen is paused (the recents
+ *   thumbnail must not show it) and cleared when the app goes to the background.
  */
 @Composable
 fun GeminiApiKeySection(controller: GeminiKeySettingsController, modifier: Modifier = Modifier) {
@@ -63,6 +70,26 @@ fun GeminiApiKeySection(controller: GeminiKeySettingsController, modifier: Modif
     LaunchedEffect(state.completedChanges) {
         input = ""
         visible = false
+    }
+
+    // Lifecycle: never leave typed key text visible or lying around while the app is not in front.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_PAUSE -> {
+                    visible = false
+                }
+                Lifecycle.Event.ON_STOP -> {
+                    input = ""
+                    visible = false
+                    confirmDelete = false
+                }
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     val hasKey = state.status == GeminiKeyStatus.SAVED || state.status == GeminiKeyStatus.UNREADABLE
