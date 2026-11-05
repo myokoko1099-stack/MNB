@@ -264,10 +264,13 @@ class ApiKeyLeakageTest {
     }
 
     @Test
-    fun onlyTheSecureStoreReadsThePlainKey() {
-        // Phase 06-B will add the Gemini provider here, on purpose. When it does, add that one file
-        // to this list and nothing else.
-        val allowed = setOf("com/mnb/browser/security/SecureApiKeyStore.kt")
+    fun onlyTheSecureStoreAndTheGeminiProviderReadThePlainKey() {
+        // Phase 06-B1: the direct Gemini provider is the one deliberate extra reader. It uses the
+        // key only to build the request header. Add another file here only on purpose.
+        val allowed = setOf(
+            "com/mnb/browser/security/SecureApiKeyStore.kt",
+            "com/mnb/browser/translation/gemini/DirectGeminiProvider.kt",
+        )
         val root = mainSourceRoot()
         val readers = root.walkTopDown()
             .filter { it.isFile && it.extension == "kt" }
