@@ -276,6 +276,8 @@ private fun ReaderSettingsPanel(
             ThemeChip("Dark", ReaderTheme.DARK, settings, onChange)
         }
         TextButton(onClick = onReset) { Text("Reset to default") }
+        // Phase 06-A2: only present when MainActivity provides the Gemini key settings.
+        LocalGeminiKeySettings.current?.let { GeminiApiKeySection(it) }
     }
 }
 
