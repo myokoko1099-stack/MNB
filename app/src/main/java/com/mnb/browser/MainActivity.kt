@@ -24,13 +24,17 @@ import com.mnb.browser.reader.translation.ReaderBackgroundTranslationCoordinator
 import com.mnb.browser.reader.translation.ReaderInstantTranslationController
 import com.mnb.browser.reader.translation.ReaderTranslationStateHolder
 import com.mnb.browser.reader.translation.UnavailableReaderTranslationGateway
+import com.mnb.browser.security.ApiKeyProvider
 import com.mnb.browser.security.SecureApiKeyStore
+import com.mnb.browser.security.StoreApiKeyProvider
 import com.mnb.browser.settings.GeminiKeySettingsController
+import com.mnb.browser.settings.GeminiKeyStatus
 import com.mnb.browser.reader.SharedPreferencesKeyValueStore
 import com.mnb.browser.state.BrowserStateManager
 import com.mnb.browser.translation.TranslationProvider
 import com.mnb.browser.translation.background.TranslationWorkEnvironment
 import com.mnb.browser.translation.background.WorkManagerTranslationScheduler
+import com.mnb.browser.translation.gemini.GeminiTranslationWiring
 import com.mnb.browser.translation.db.MnbDatabase
 import com.mnb.browser.ui.BrowserScreen
 import com.mnb.browser.ui.LocalGeminiKeySettings
@@ -73,12 +77,14 @@ class MainActivity : ComponentActivity() {
         ReaderSettingsRepository(SharedPreferencesKeyValueStore(applicationContext))
     }
 
-    // No real translation provider exists yet. MockTranslationProvider must NOT be returned here:
-    // null keeps every chapter at Unavailable(NOT_CONFIGURED), starts no background translation and
-    // opens neither the database nor WorkManager. When a real, non-mock provider is added, return it
-    // here AND set TranslationWorkEnvironment.providerFactory to the same provider (same id); the
-    // background coordinator refuses to start while the worker would use a different provider or a mock.
-    private val translationProviderSource: () -> TranslationProvider? = { null }
+    // Phase 06-B2: the real provider is the direct Gemini provider with the user's own key (BYOK).
+    // MockTranslationProvider must NOT be returned here. The source only answers "is a key saved?"
+    // from the in-memory settings status (no Keystore or file work: it may run on the main thread).
+    // Without a saved key it returns null, so every chapter keeps showing Unavailable(NOT_CONFIGURED),
+    // starts no background translation and opens neither the database nor WorkManager. The key is read
+    // later, on the translation thread, by the provider itself. The background worker is given the
+    // same provider (same id) in onCreate, as TranslationWorkEnvironment requires.
+    private val translationProviderSource: () -> TranslationProvider? = { geminiTranslation.providerOrNull() }
 
     // Instant translation runs on its own single background thread, never on the main thread.
     private val translationExecutorLazy: Lazy<ExecutorService> = lazy {
@@ -118,21 +124,39 @@ class MainActivity : ComponentActivity() {
         )
     }
 
-    // Phase 06-A2: Gemini API key settings. The Phase 06-A1 secure store is created and used only on
-    // this single background thread (Keystore and file work never run on the main thread). Nothing
-    // reads the key for any request yet: no Gemini client is connected in this phase.
+    // Phase 06-A2: Gemini API key settings. Keystore and file work of the secure store runs only on
+    // this single background thread or on a translation thread, never on the main thread.
     private val geminiKeyExecutorLazy: Lazy<ExecutorService> = lazy {
         Executors.newSingleThreadExecutor { r -> Thread(r, "mnb-gemini-key-settings").apply { isDaemon = true } }
     }
+
+    // One store instance for the settings screen and for the translation provider: the store
+    // serialises its operations per instance. Created on first use, which is always off the main thread.
+    private val geminiKeyStore by lazy { SecureApiKeyStore.create(applicationContext) }
     private val geminiKeySettings by lazy {
         GeminiKeySettingsController(
-            storeFactory = { SecureApiKeyStore.create(applicationContext) },
+            storeFactory = { geminiKeyStore },
             executor = geminiKeyExecutorLazy.value,
+        )
+    }
+
+    // Phase 06-B2: Gemini as the translation provider. It reads the key only through the Phase 06-A
+    // secure storage (read-only access), and only when it translates.
+    private val geminiTranslation by lazy {
+        GeminiTranslationWiring(
+            // The store is only touched inside lookup(), i.e. on the translation thread, never here.
+            keys = ApiKeyProvider { StoreApiKeyProvider(geminiKeyStore).lookup() },
+            keyIsSaved = { geminiKeySettings.state.status == GeminiKeyStatus.SAVED },
         )
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // The background worker must use the same provider (same id) as the reader, otherwise it refuses.
+        TranslationWorkEnvironment.providerFactory = { geminiTranslation.provider }
+        TranslationWorkEnvironment.readerProviderIdSource = { geminiTranslation.readerProviderId() }
+        // Learn on a background thread whether a key is already saved, so a saved key enables translation.
+        geminiKeySettings.refresh()
         setContent {
             MaterialTheme(colorScheme = if (isSystemInDarkTheme()) darkColorScheme() else lightColorScheme()) {
                 CompositionLocalProvider(
