@@ -5,3 +5,11 @@ local.properties
 build/
 app/build/
 app-debug.apk
+
+# Signing material and credentials must never be committed (Phase 06-B4)
+*.jks
+*.keystore
+*.p12
+*.pfx
+keystore.properties
+.env
