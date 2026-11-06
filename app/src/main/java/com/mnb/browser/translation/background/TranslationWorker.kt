@@ -63,13 +63,15 @@ class TranslationWorker(context: Context, params: WorkerParameters) : Worker(con
 }
 
 /**
- * Where the worker gets its dependencies (no custom WorkerFactory or Application class needed).
- * [providerFactory] defaults to the mock provider because no real provider exists yet; set it
- * before enqueueing once one does. Tests replace [runnerFactory].
+ * Where the worker gets its dependencies (no custom WorkerFactory needed). [providerFactory]
+ * defaults to the mock provider; tests replace [runnerFactory].
  *
- * (I10-D) The mock default is now harmless: the worker refuses it ([TranslationWorkerGuard]).
- * When a real provider is added, set [providerFactory] AND [readerProviderIdSource] to that same
- * provider (same id) in addition to the reader's provider source; otherwise the worker refuses.
+ * (I10-D) The mock default is harmless: the worker refuses it ([TranslationWorkerGuard]).
+ *
+ * (06-B4) In the app, MnbApplication.onCreate sets [providerFactory] and [readerProviderIdSource]
+ * to the direct Gemini provider at process start. This must not move into an Activity: WorkManager
+ * can start the process only to run this worker, and then no Activity exists, so the mock default
+ * would still be in place and the worker would refuse every chapter.
  */
 object TranslationWorkEnvironment {
     @Volatile var providerFactory: () -> TranslationProvider = { MockTranslationProvider() }

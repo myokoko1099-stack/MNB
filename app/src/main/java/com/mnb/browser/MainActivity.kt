@@ -25,7 +25,6 @@ import com.mnb.browser.reader.translation.ReaderInstantTranslationController
 import com.mnb.browser.reader.translation.ReaderTranslationStateHolder
 import com.mnb.browser.reader.translation.UnavailableReaderTranslationGateway
 import com.mnb.browser.security.ApiKeyProvider
-import com.mnb.browser.security.SecureApiKeyStore
 import com.mnb.browser.security.StoreApiKeyProvider
 import com.mnb.browser.settings.GeminiKeySettingsController
 import com.mnb.browser.settings.GeminiKeyStatus
@@ -82,8 +81,9 @@ class MainActivity : ComponentActivity() {
     // from the in-memory settings status (no Keystore or file work: it may run on the main thread).
     // Without a saved key it returns null, so every chapter keeps showing Unavailable(NOT_CONFIGURED),
     // starts no background translation and opens neither the database nor WorkManager. The key is read
-    // later, on the translation thread, by the provider itself. The background worker is given the
-    // same provider (same id) in onCreate, as TranslationWorkEnvironment requires.
+    // later, on the translation thread, by the provider itself. The background worker gets the same
+    // provider id from MnbApplication (Phase 06-B4), which installs it at process start, so the worker
+    // also works when Android starts the process only to run it (no Activity, no onCreate here).
     private val translationProviderSource: () -> TranslationProvider? = { geminiTranslation.providerOrNull() }
 
     // Instant translation runs on its own single background thread, never on the main thread.
@@ -130,9 +130,10 @@ class MainActivity : ComponentActivity() {
         Executors.newSingleThreadExecutor { r -> Thread(r, "mnb-gemini-key-settings").apply { isDaemon = true } }
     }
 
-    // One store instance for the settings screen and for the translation provider: the store
-    // serialises its operations per instance. Created on first use, which is always off the main thread.
-    private val geminiKeyStore by lazy { SecureApiKeyStore.create(applicationContext) }
+    // One store instance for the settings screen, the translation provider and the background worker:
+    // the store serialises its operations per instance. It lives in MnbApplication (Phase 06-B4) and is
+    // created on first use, which is always off the main thread.
+    private val geminiKeyStore by lazy { (application as MnbApplication).geminiKeyStore }
     private val geminiKeySettings by lazy {
         GeminiKeySettingsController(
             storeFactory = { geminiKeyStore },
@@ -152,9 +153,6 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // The background worker must use the same provider (same id) as the reader, otherwise it refuses.
-        TranslationWorkEnvironment.providerFactory = { geminiTranslation.provider }
-        TranslationWorkEnvironment.readerProviderIdSource = { geminiTranslation.readerProviderId() }
         // Learn on a background thread whether a key is already saved, so a saved key enables translation.
         geminiKeySettings.refresh()
         setContent {

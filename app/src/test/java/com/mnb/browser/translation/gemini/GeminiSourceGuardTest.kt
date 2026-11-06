@@ -9,7 +9,8 @@ import org.junit.Test
 /**
  * Phase 06-B1: a scan of the gemini sources. It fails if logging, cleartext HTTP, a key in a URL,
  * or a second reader of the plain key is added. Phase 06-B2 wired the provider into the app: it
- * also checks that only MainActivity (the wiring point) uses the gemini package.
+ * also checks that only the wiring points use the gemini package: MainActivity (the reader) and,
+ * since Phase 06-B4, MnbApplication (the background worker's provider).
  */
 class GeminiSourceGuardTest {
 
@@ -81,7 +82,7 @@ class GeminiSourceGuardTest {
     }
 
     @Test
-    fun onlyMainActivityUsesTheGeminiPackage() {
+    fun onlyTheAppWiringFilesUseTheGeminiPackage() {
         val root = mainSourceRoot()
         val users = root.walkTopDown()
             .filter { it.isFile && it.extension == "kt" && it.parentFile?.name != "gemini" }
@@ -91,7 +92,12 @@ class GeminiSourceGuardTest {
             }
             .map { it.name }
             .toList()
-        assertEquals("unexpected users of the Gemini provider: $users", listOf("MainActivity.kt"), users)
+        assertEquals(
+            "unexpected users of the Gemini provider: $users",
+            setOf("MainActivity.kt", "MnbApplication.kt"),
+            users.toSet(),
+        )
+        assertEquals("a wiring file was listed twice: $users", users.size, users.toSet().size)
     }
 
     // ================= helpers =================
