@@ -63,4 +63,20 @@ class BrowserDataRepository(private val db: MnbDatabase) {
         }
         return activated
     }
+
+    /**
+     * Phase 2B: makes the stored tab list exactly [rows] in one transaction. Tabs that are not in
+     * [rows] are deleted; the rows carry their own position and active flag.
+     */
+    fun replaceTabs(rows: List<BrowserTabEntity>) {
+        db.runInTransaction(
+            Runnable {
+                val keep = rows.map { it.tabId }.toSet()
+                for (old in tabs.listAll()) {
+                    if (old.tabId !in keep) tabs.delete(old.tabId)
+                }
+                for (row in rows) tabs.save(row)
+            },
+        )
+    }
 }
