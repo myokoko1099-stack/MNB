@@ -28,6 +28,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         MemoryStyleEntity::class,
         MemoryConflictEntity::class,
         MemoryHistoryEntity::class,
+        BookmarkEntity::class,
+        BrowserHistoryEntity::class,
+        BrowserTabEntity::class,
     ],
     version = MnbMigrations.CURRENT_VERSION,
     exportSchema = true,
@@ -47,6 +50,9 @@ abstract class MnbDatabase : RoomDatabase() {
     abstract fun memoryStyleDao(): MemoryStyleDao
     abstract fun memoryConflictDao(): MemoryConflictDao
     abstract fun memoryHistoryDao(): MemoryHistoryDao
+    abstract fun bookmarkDao(): BookmarkDao
+    abstract fun browserHistoryDao(): BrowserHistoryDao
+    abstract fun browserTabDao(): BrowserTabDao
 
     companion object {
         const val NAME = "mnb.db"
@@ -68,7 +74,7 @@ abstract class MnbDatabase : RoomDatabase() {
  * [CURRENT_VERSION] is raised to match. The exported schema JSON for each version stays in git.
  */
 object MnbMigrations {
-    const val CURRENT_VERSION = 3
+    const val CURRENT_VERSION = 4
 
     /** Version 2 (Phase 04-I6): adds the Context Memory tables. Existing tables and rows are untouched. */
     val MIGRATION_1_2: Migration = object : Migration(1, 2) {
@@ -87,5 +93,36 @@ object MnbMigrations {
         }
     }
 
-    val ALL: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3)
+    /** Phase 2A: browser bookmarks, visit history and persisted tab metadata. */
+    val MIGRATION_3_4: Migration = object : Migration(3, 4) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS bookmarks (" +
+                    "bookmarkId INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                    "url TEXT NOT NULL, title TEXT NOT NULL, createdAtMillis INTEGER NOT NULL)"
+            )
+            db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_bookmarks_url ON bookmarks(url)")
+
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS browser_history (" +
+                    "historyId INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                    "url TEXT NOT NULL, title TEXT NOT NULL, visitedAtMillis INTEGER NOT NULL)"
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS index_browser_history_visitedAtMillis " +
+                    "ON browser_history(visitedAtMillis)"
+            )
+
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS browser_tabs (" +
+                    "tabId TEXT NOT NULL, url TEXT NOT NULL, title TEXT NOT NULL, " +
+                    "position INTEGER NOT NULL, lastAccessedAtMillis INTEGER NOT NULL, " +
+                    "isActive INTEGER NOT NULL, PRIMARY KEY(tabId))"
+            )
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_browser_tabs_position ON browser_tabs(position)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_browser_tabs_isActive ON browser_tabs(isActive)")
+        }
+    }
+
+    val ALL: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
 }
