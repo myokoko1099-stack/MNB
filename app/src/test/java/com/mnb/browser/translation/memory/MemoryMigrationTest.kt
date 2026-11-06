@@ -79,7 +79,7 @@ class MemoryMigrationTest {
             .allowMainThreadQueries()
             .build()
         try {
-            assertEquals(3, db.openHelper.readableDatabase.version)
+            assertEquals(4, db.openHelper.readableDatabase.version)
 
             // Version 1 rows survived.
             assertEquals("Old novel", db.novelDao().get("legacy")!!.title)
@@ -130,7 +130,7 @@ class MemoryMigrationTest {
     }
 
     @Test fun theMigrationListEndsAtTheCurrentVersion() {
-        assertEquals(3, MnbMigrations.CURRENT_VERSION)
-        assertEquals(listOf(1 to 2, 2 to 3), MnbMigrations.ALL.map { it.startVersion to it.endVersion })
+        assertEquals(4, MnbMigrations.CURRENT_VERSION)
+        assertEquals(listOf(1 to 2, 2 to 3, 3 to 4), MnbMigrations.ALL.map { it.startVersion to it.endVersion })
     }
 }
