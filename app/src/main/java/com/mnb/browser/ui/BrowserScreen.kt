@@ -9,25 +9,13 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.ArrowForward
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.List
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -35,27 +23,34 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.mnb.browser.extraction.ExtractionController
 import com.mnb.browser.extraction.ExtractionState
 import com.mnb.browser.extraction.ExtractionStateManager
 import com.mnb.browser.navigation.NavigationController
+import com.mnb.browser.navigation.UrlPolicy
 import com.mnb.browser.reader.ReaderPositionRepository
 import com.mnb.browser.reader.ReaderSettingsRepository
 import com.mnb.browser.reader.ReaderStateManager
 import com.mnb.browser.state.BrowserError
 import com.mnb.browser.state.BrowserStateManager
 import com.mnb.browser.web.WebViewController
+import com.mnb.browser.ui.premium.AddressBarOverlay
+import com.mnb.browser.ui.premium.BottomBar
+import com.mnb.browser.ui.premium.NewTabPage
+import com.mnb.browser.ui.premium.PremiumSettings
+import com.mnb.browser.ui.premium.UiPreferences
 
 @Composable
 fun BrowserScreen(
@@ -67,102 +62,99 @@ fun BrowserScreen(
     readerState: ReaderStateManager,
     readerPositions: ReaderPositionRepository,
     readerSettings: ReaderSettingsRepository,
+    uiPreferences: UiPreferences,
 ) {
     val state = stateManager.state
     val extractionUi = extractionState.state
     val readerContent = readerState.content
-    // Hide the browser bars while the preview or reader is full screen.
-    val overlayOpen = extractionUi !is ExtractionState.Idle || readerContent != null
     val focus = LocalFocusManager.current
-    var input by rememberSaveable { mutableStateOf("") }
-    LaunchedEffect(state.currentUrl) { input = state.currentUrl }
+    val addressFocusRequester = remember { FocusRequester() }
 
-    BackHandler(enabled = state.canGoBack) { navigation.back() }
-    // Registered after the one above, so it wins while the preview is open.
-    BackHandler(enabled = extractionUi !is ExtractionState.Idle) { extraction.close() }
-    // Registered last, so it wins while the reader is open and returns to the preview.
-    BackHandler(enabled = readerContent != null) { readerState.close() }
+    var addressOpen by rememberSaveable { mutableStateOf(false) }
+    var settingsOpen by rememberSaveable { mutableStateOf(false) }
+    var addressValue by remember { mutableStateOf(TextFieldValue("")) }
 
-    fun go() {
+    val readerOpen = readerContent != null
+    val extractionOpen = extractionUi !is ExtractionState.Idle
+    val overlayOpen = readerOpen || extractionOpen || addressOpen || settingsOpen
+    val isNewTab = state.currentUrl.isBlank() || state.currentUrl.trimEnd('/') == UrlPolicy.HOME_URL.trimEnd('/')
+
+    fun openAddress(initialText: String) {
+        addressValue = TextFieldValue(
+            text = initialText,
+            selection = TextRange(0, initialText.length),
+        )
+        addressOpen = true
+    }
+
+    fun navigate(raw: String) {
+        addressOpen = false
         focus.clearFocus()
-        navigation.submit(input)
+        navigation.submit(raw)
+    }
+
+    BackHandler(enabled = state.canGoBack && !overlayOpen) { navigation.back() }
+    BackHandler(enabled = addressOpen) {
+        addressOpen = false
+        focus.clearFocus()
+    }
+    BackHandler(enabled = settingsOpen) { settingsOpen = false }
+    BackHandler(enabled = extractionOpen) { extraction.close() }
+    BackHandler(enabled = readerOpen) { readerState.close() }
+
+    LaunchedEffect(addressOpen) {
+        if (addressOpen) addressFocusRequester.requestFocus()
     }
 
     Scaffold(
-        topBar = {
-            if (!overlayOpen) Surface(tonalElevation = 3.dp) {
-                Column(Modifier.fillMaxWidth()) {
-                    Text(
-                        text = state.title.ifBlank { "MNB" },
-                        style = MaterialTheme.typography.labelLarge,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp),
-                    )
-                    Row(
-                        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        OutlinedTextField(
-                            value = input,
-                            onValueChange = { input = it },
-                            singleLine = true,
-                            placeholder = { Text("Search or enter address") },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Go),
-                            keyboardActions = KeyboardActions(onGo = { go() }),
-                            modifier = Modifier.weight(1f),
-                        )
-                        IconButton(onClick = { go() }) {
-                            Icon(Icons.Default.Search, contentDescription = "Go")
-                        }
-                    }
-                    if (state.isLoading) {
-                        LinearProgressIndicator(
-                            progress = { state.progress / 100f },
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                    } else {
-                        Box(Modifier.size(width = 0.dp, height = 4.dp))
-                    }
-                }
-            }
-        },
         bottomBar = {
-            if (!overlayOpen) NavigationBar {
-                NavigationBarItem(
-                    selected = false, enabled = state.canGoBack, onClick = { navigation.back() },
-                    icon = { Icon(Icons.Default.ArrowBack, null) }, label = { Text("Back") },
-                )
-                NavigationBarItem(
-                    selected = false, enabled = state.canGoForward, onClick = { navigation.forward() },
-                    icon = { Icon(Icons.Default.ArrowForward, null) }, label = { Text("Forward") },
-                )
-                NavigationBarItem(
-                    selected = false, onClick = { navigation.home() },
-                    icon = { Icon(Icons.Default.Home, null) }, label = { Text("Home") },
-                )
-                NavigationBarItem(
-                    selected = false, onClick = { navigation.refresh() },
-                    icon = { Icon(Icons.Default.Refresh, null) }, label = { Text("Refresh") },
-                )
-                NavigationBarItem(
-                    selected = false,
-                    enabled = state.currentUrl.isNotBlank() && !state.isLoading && state.error == null,
-                    onClick = { extraction.extract() },
-                    icon = { Icon(Icons.Default.List, null) }, label = { Text("Extract") },
+            if (!overlayOpen) {
+                BottomBar(
+                    currentUrl = state.currentUrl,
+                    canGoBack = state.canGoBack,
+                    canGoForward = state.canGoForward,
+                    extractEnabled = state.currentUrl.isNotBlank() && !state.isLoading && state.error == null,
+                    onAddressClick = { openAddress(state.currentUrl) },
+                    onBack = { navigation.back() },
+                    onForward = { navigation.forward() },
+                    onHome = { navigation.home() },
+                    onRefresh = { navigation.refresh() },
+                    onExtract = { extraction.extract() },
+                    onSettings = { settingsOpen = true },
                 )
             }
         },
     ) { padding ->
         Box(Modifier.padding(padding).fillMaxSize()) {
             AndroidView(
-                factory = { ctx -> webController.createWebView(ctx) },
+                factory = { context -> webController.createWebView(context) },
                 modifier = Modifier.fillMaxSize(),
             )
-            state.error?.let { error ->
-                ErrorOverlay(error, onRetry = { navigation.refresh() }, onDismiss = { navigation.dismissError() })
+
+            if (isNewTab && state.error == null && !overlayOpen) {
+                NewTabPage(
+                    onSearch = { openAddress("") },
+                    onNavigate = ::navigate,
+                    prefs = uiPreferences,
+                )
             }
-            if (extractionUi !is ExtractionState.Idle) {
+
+            if (state.isLoading && !overlayOpen) {
+                LinearProgressIndicator(
+                    progress = { state.progress / 100f },
+                    modifier = Modifier.fillMaxWidth().align(Alignment.TopCenter),
+                )
+            }
+
+            state.error?.let { error ->
+                ErrorOverlay(
+                    error = error,
+                    onRetry = { navigation.refresh() },
+                    onDismiss = { navigation.dismissError() },
+                )
+            }
+
+            if (extractionOpen) {
                 ExtractionPreviewScreen(
                     state = extractionUi,
                     onClose = { extraction.close() },
@@ -170,6 +162,7 @@ fun BrowserScreen(
                     onRead = { readerState.open(it) },
                 )
             }
+
             if (readerContent != null) {
                 ReaderScreen(
                     content = readerContent,
@@ -177,6 +170,28 @@ fun BrowserScreen(
                     settingsRepository = readerSettings,
                     onClose = { readerState.close() },
                     translation = readerState.translation?.current,
+                )
+            }
+
+            if (settingsOpen && !readerOpen && !extractionOpen) {
+                PremiumSettings(
+                    prefs = uiPreferences,
+                    onClose = { settingsOpen = false },
+                )
+            }
+
+            if (addressOpen && !readerOpen && !extractionOpen && !settingsOpen) {
+                AddressBarOverlay(
+                    currentUrl = state.currentUrl,
+                    pageTitle = state.title,
+                    overlayTextValue = addressValue,
+                    overlayFocusRequester = addressFocusRequester,
+                    onOverlayTextChange = { addressValue = it },
+                    onDismiss = {
+                        addressOpen = false
+                        focus.clearFocus()
+                    },
+                    onNavigate = ::navigate,
                 )
             }
         }
@@ -191,9 +206,24 @@ private fun ErrorOverlay(error: BrowserError, onRetry: () -> Unit, onDismiss: ()
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
-            Icon(Icons.Default.Warning, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(48.dp))
-            Text(error.title, style = MaterialTheme.typography.titleLarge, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 16.dp))
-            Text(error.message, style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center, modifier = Modifier.padding(vertical = 12.dp))
+            Icon(
+                Icons.Default.Warning,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.error,
+                modifier = Modifier.size(48.dp),
+            )
+            Text(
+                error.title,
+                style = MaterialTheme.typography.titleLarge,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(top = 16.dp),
+            )
+            Text(
+                error.message,
+                style = MaterialTheme.typography.bodyMedium,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(vertical = 12.dp),
+            )
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedButton(onClick = onDismiss) { Text("Dismiss") }
                 if (error.failingUrl != null) Button(onClick = onRetry) { Text("Retry") }

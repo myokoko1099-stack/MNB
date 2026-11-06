@@ -3,11 +3,8 @@ package com.mnb.browser
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.remember
 import androidx.work.WorkManager
 import com.mnb.browser.extraction.ExtractionController
 import com.mnb.browser.extraction.ExtractionStateManager
@@ -37,6 +34,8 @@ import com.mnb.browser.translation.gemini.GeminiTranslationWiring
 import com.mnb.browser.translation.db.MnbDatabase
 import com.mnb.browser.ui.BrowserScreen
 import com.mnb.browser.ui.LocalGeminiKeySettings
+import com.mnb.browser.ui.premium.MnbTheme
+import com.mnb.browser.ui.premium.UiPreferences
 import com.mnb.browser.web.FileWebSessionStore
 import com.mnb.browser.web.WebViewController
 import java.io.File
@@ -156,14 +155,15 @@ class MainActivity : ComponentActivity() {
         // Learn on a background thread whether a key is already saved, so a saved key enables translation.
         geminiKeySettings.refresh()
         setContent {
-            MaterialTheme(colorScheme = if (isSystemInDarkTheme()) darkColorScheme() else lightColorScheme()) {
+            val uiPreferences = remember { UiPreferences(applicationContext) }
+            MnbTheme(uiPreferences.themeMode) {
                 CompositionLocalProvider(
                     LocalReaderTranslationActions provides translationController,
                     LocalGeminiKeySettings provides geminiKeySettings,
                 ) {
                     BrowserScreen(
                         stateManager, webController, navigation, extraction, extractionState,
-                        readerState, readerPositions, readerSettings,
+                        readerState, readerPositions, readerSettings, uiPreferences,
                     )
                 }
             }
