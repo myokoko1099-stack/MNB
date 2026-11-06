@@ -29,10 +29,12 @@ class UiPreferences(context: Context) {
         val json = prefs.getString(KEY_SHORTCUTS, null) ?: return DEFAULT_SHORTCUTS
         return try {
             val array = JSONArray(json)
-            (0 until array.length()).map { i ->
+            val saved = (0 until array.length()).map { i ->
                 val obj = array.getJSONObject(i)
                 Shortcut(obj.getString("name"), obj.getString("url"))
             }
+            // Untouched list from an earlier version (DuckDuckGo/Wikipedia/GitHub): show the new defaults.
+            if (DefaultShortcuts.isLegacyDefault(saved)) DEFAULT_SHORTCUTS else saved
         } catch (_: JSONException) {
             DEFAULT_SHORTCUTS
         }
@@ -60,10 +62,7 @@ class UiPreferences(context: Context) {
         private const val KEY_THEME_MODE = "theme_mode"
         private const val KEY_SHORTCUTS = "shortcuts"
 
-        val DEFAULT_SHORTCUTS = listOf(
-            Shortcut("DuckDuckGo", "https://duckduckgo.com"),
-            Shortcut("Wikipedia", "https://www.wikipedia.org"),
-            Shortcut("GitHub", "https://github.com"),
-        )
+        /** Bundled novel sites, see [DefaultShortcuts]. Used on every fresh install. */
+        val DEFAULT_SHORTCUTS: List<Shortcut> = DefaultShortcuts.shortcuts
     }
 }
