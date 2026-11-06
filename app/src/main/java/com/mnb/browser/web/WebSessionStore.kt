@@ -6,6 +6,9 @@ import java.io.File
 interface WebSessionStore {
     fun load(): ByteArray?
     fun save(bytes: ByteArray)
+
+    /** Deletes the stored session (used when a tab is closed). */
+    fun clear() {}
 }
 
 /**
@@ -30,6 +33,14 @@ class FileWebSessionStore(private val fileProvider: () -> File) : WebSessionStor
             }
         } catch (e: Exception) {
             // Best effort: losing the saved session must never crash the app.
+        }
+    }
+
+    override fun clear() {
+        try {
+            fileProvider().delete()
+        } catch (e: Exception) {
+            // Best effort.
         }
     }
 }

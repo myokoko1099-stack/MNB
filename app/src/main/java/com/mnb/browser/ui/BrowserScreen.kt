@@ -1,6 +1,12 @@
 package com.mnb.browser.ui
 
+import android.widget.FrameLayout
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -45,12 +51,14 @@ import com.mnb.browser.reader.ReaderSettingsRepository
 import com.mnb.browser.reader.ReaderStateManager
 import com.mnb.browser.state.BrowserError
 import com.mnb.browser.state.BrowserStateManager
+import com.mnb.browser.tabs.TabManager
 import com.mnb.browser.web.WebViewController
 import com.mnb.browser.ui.premium.AddressBarOverlay
 import com.mnb.browser.ui.premium.BottomBar
 import com.mnb.browser.ui.premium.NewTabPage
 import com.mnb.browser.ui.premium.PremiumSettings
 import com.mnb.browser.ui.premium.UiPreferences
+import com.mnb.browser.ui.tabs.TabSwitcher
 
 @Composable
 fun BrowserScreen(
@@ -63,6 +71,7 @@ fun BrowserScreen(
     readerPositions: ReaderPositionRepository,
     readerSettings: ReaderSettingsRepository,
     uiPreferences: UiPreferences,
+    tabManager: TabManager,
 ) {
     val state = stateManager.state
     val extractionUi = extractionState.state
@@ -72,12 +81,14 @@ fun BrowserScreen(
 
     var addressOpen by rememberSaveable { mutableStateOf(false) }
     var settingsOpen by rememberSaveable { mutableStateOf(false) }
+    var switcherOpen by rememberSaveable { mutableStateOf(false) }
     var addressValue by remember { mutableStateOf(TextFieldValue("")) }
 
     val readerOpen = readerContent != null
     val extractionOpen = extractionUi !is ExtractionState.Idle
-    val overlayOpen = readerOpen || extractionOpen || addressOpen || settingsOpen
+    val overlayOpen = readerOpen || extractionOpen || addressOpen || settingsOpen || switcherOpen
     val isNewTab = state.currentUrl.isBlank() || state.currentUrl.trimEnd('/') == UrlPolicy.HOME_URL.trimEnd('/')
+    val activeTab = tabManager.activeTab
 
     fun openAddress(initialText: String) {
         addressValue = TextFieldValue(
@@ -94,6 +105,7 @@ fun BrowserScreen(
     }
 
     BackHandler(enabled = state.canGoBack && !overlayOpen) { navigation.back() }
+    BackHandler(enabled = switcherOpen) { switcherOpen = false }
     BackHandler(enabled = addressOpen) {
         addressOpen = false
         focus.clearFocus()
@@ -121,15 +133,24 @@ fun BrowserScreen(
                     onRefresh = { navigation.refresh() },
                     onExtract = { extraction.extract() },
                     onSettings = { settingsOpen = true },
+                    tabCount = tabManager.tabs.size,
+                    onTabs = { switcherOpen = true },
                 )
             }
         },
     ) { padding ->
         Box(Modifier.padding(padding).fillMaxSize()) {
-            AndroidView(
-                factory = { context -> webController.createWebView(context) },
-                modifier = Modifier.fillMaxSize(),
-            )
+            // One host view for every tab. The controller detaches the previous tab's WebView from
+            // it before attaching the next one, so a WebView never has two parents.
+            if (activeTab != null) {
+                val activeId = activeTab.id
+                val activeUrl = activeTab.url
+                AndroidView(
+                    factory = { context -> FrameLayout(context) },
+                    update = { host -> webController.mount(host, activeId, activeUrl) },
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
 
             if (isNewTab && state.error == null && !overlayOpen) {
                 NewTabPage(
@@ -192,6 +213,27 @@ fun BrowserScreen(
                         focus.clearFocus()
                     },
                     onNavigate = ::navigate,
+                )
+            }
+
+            AnimatedVisibility(
+                visible = switcherOpen && !readerOpen && !extractionOpen,
+                enter = fadeIn() + scaleIn(initialScale = 0.94f),
+                exit = fadeOut() + scaleOut(targetScale = 0.94f),
+            ) {
+                TabSwitcher(
+                    tabs = tabManager.tabs,
+                    activeTabId = tabManager.activeTabId,
+                    canOpenNewTab = tabManager.canOpenNewTab,
+                    onSelect = { id ->
+                        tabManager.switchTo(id)
+                        switcherOpen = false
+                    },
+                    onClose = { id -> tabManager.close(id) },
+                    onNewTab = {
+                        if (tabManager.newTab() != null) switcherOpen = false
+                    },
+                    onDismiss = { switcherOpen = false },
                 )
             }
         }

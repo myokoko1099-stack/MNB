@@ -1,6 +1,8 @@
 package com.mnb.browser
 
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.CompositionLocalProvider
@@ -27,27 +29,51 @@ import com.mnb.browser.settings.GeminiKeySettingsController
 import com.mnb.browser.settings.GeminiKeyStatus
 import com.mnb.browser.reader.SharedPreferencesKeyValueStore
 import com.mnb.browser.state.BrowserStateManager
+import com.mnb.browser.tabs.LazyTabPersistence
+import com.mnb.browser.tabs.RoomTabPersistence
+import com.mnb.browser.tabs.TabManager
+import com.mnb.browser.tabs.TabSessionFiles
 import com.mnb.browser.translation.TranslationProvider
 import com.mnb.browser.translation.background.TranslationWorkEnvironment
 import com.mnb.browser.translation.background.WorkManagerTranslationScheduler
 import com.mnb.browser.translation.gemini.GeminiTranslationWiring
+import com.mnb.browser.translation.db.BrowserDataRepository
 import com.mnb.browser.translation.db.MnbDatabase
 import com.mnb.browser.ui.BrowserScreen
 import com.mnb.browser.ui.LocalGeminiKeySettings
 import com.mnb.browser.ui.premium.MnbTheme
 import com.mnb.browser.ui.premium.UiPreferences
-import com.mnb.browser.web.FileWebSessionStore
 import com.mnb.browser.web.WebViewController
 import java.io.File
+import java.util.concurrent.Executor
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
 class MainActivity : ComponentActivity() {
     private val stateManager = BrowserStateManager()
+
+    // Phase 2B: one background thread for everything about tabs that touches disk: the tab list in
+    // Room, one WebView session file per tab, and removing session files of closed tabs. Nothing
+    // here runs on the main thread. Created on first use.
+    private val tabIoExecutorLazy: Lazy<ExecutorService> = lazy {
+        Executors.newSingleThreadExecutor { r -> Thread(r, "mnb-tabs").apply { isDaemon = true } }
+    }
+    private val tabIo = Executor { task -> tabIoExecutorLazy.value.execute(task) }
     // filesDir is resolved lazily, once the Activity is attached.
+    private val tabFiles = TabSessionFiles { File(filesDir, "tab_sessions") }
     private val webController = WebViewController(
         stateManager,
-        FileWebSessionStore { File(filesDir, "web_session.bin") },
+        sessionStoreFactory = { tabId -> tabFiles.storeFor(tabId) },
+        ioExecutor = tabIo,
+    )
+    private val mainHandler by lazy { Handler(Looper.getMainLooper()) }
+    // Phase 2B: the tab list is stored in the Phase 2A browser_tabs table (database version 4).
+    private val tabManager = TabManager(
+        persistence = LazyTabPersistence {
+            RoomTabPersistence(BrowserDataRepository(MnbDatabase.getInstance(applicationContext)))
+        },
+        ioExecutor = tabIo,
+        mainPoster = { task -> mainHandler.post(task) },
     )
     private val navigation = NavigationController(webController, stateManager)
     private val extractionState = ExtractionStateManager()
@@ -154,6 +180,12 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         // Learn on a background thread whether a key is already saved, so a saved key enables translation.
         geminiKeySettings.refresh()
+        // Phase 2B: page changes of any tab update that tab's stored address and title; a closed tab
+        // loses its WebView and session file; the stored tabs are loaded on the background thread.
+        webController.pageListener = { tabId, url, title -> tabManager.updatePage(tabId, url, title) }
+        tabManager.onTabClosed = { tabId -> webController.closeTab(tabId) }
+        tabManager.onRestored = { openIds -> tabIo.execute { tabFiles.prune(openIds) } }
+        tabManager.restore()
         setContent {
             val uiPreferences = remember { UiPreferences(applicationContext) }
             MnbTheme(uiPreferences.themeMode) {
@@ -163,7 +195,7 @@ class MainActivity : ComponentActivity() {
                 ) {
                     BrowserScreen(
                         stateManager, webController, navigation, extraction, extractionState,
-                        readerState, readerPositions, readerSettings, uiPreferences,
+                        readerState, readerPositions, readerSettings, uiPreferences, tabManager,
                     )
                 }
             }
@@ -178,6 +210,8 @@ class MainActivity : ComponentActivity() {
         // WorkManager keeps its own work running; only this thread (the navigation sync) stops.
         if (backgroundExecutorLazy.isInitialized()) backgroundExecutorLazy.value.shutdownNow()
         if (geminiKeyExecutorLazy.isInitialized()) geminiKeyExecutorLazy.value.shutdownNow()
+        // Let the queued tab and session writes finish; no new ones are accepted.
+        if (tabIoExecutorLazy.isInitialized()) tabIoExecutorLazy.value.shutdown()
         super.onDestroy()
     }
 }
