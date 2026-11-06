@@ -4,18 +4,21 @@ package com.mnb.browser.ui.premium
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
@@ -31,6 +34,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -70,24 +75,29 @@ fun BottomBar(
                     Row(
                         Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
                         horizontalArrangement = Arrangement.SpaceEvenly,
-                        verticalAlignment = Alignment.CenterVertically,
+                        verticalAlignment = Alignment.Top,
                     ) {
-                        IconButton(onClick = { menuOpen = false; onBack() }, enabled = canGoBack) {
-                            Icon(Icons.Default.ArrowBack, contentDescription = "Back", modifier = Modifier.size(22.dp))
+                        MenuAction(Icons.AutoMirrored.Filled.ArrowBack, "Back", canGoBack) {
+                            menuOpen = false
+                            onBack()
                         }
-                        IconButton(onClick = { menuOpen = false; onForward() }, enabled = canGoForward) {
-                            Icon(Icons.Default.ArrowForward, contentDescription = "Forward", modifier = Modifier.size(22.dp))
+                        MenuAction(Icons.AutoMirrored.Filled.ArrowForward, "Forward", canGoForward) {
+                            menuOpen = false
+                            onForward()
                         }
-                        IconButton(onClick = { menuOpen = false; onHome() }) {
-                            Icon(Icons.Default.Home, contentDescription = "Home", modifier = Modifier.size(22.dp))
+                        MenuAction(Icons.Default.Home, "Home", true) {
+                            menuOpen = false
+                            onHome()
                         }
-                        IconButton(onClick = { menuOpen = false; onRefresh() }) {
-                            Icon(Icons.Default.Refresh, contentDescription = "Refresh", modifier = Modifier.size(22.dp))
+                        MenuAction(Icons.Default.Refresh, "Refresh", true) {
+                            menuOpen = false
+                            onRefresh()
                         }
                     }
                     HorizontalDivider()
                     DropdownMenuItem(
-                        text = { androidx.compose.material3.Text("Settings") },
+                        text = { Text("Settings") },
+                        leadingIcon = { Icon(Icons.Default.Settings, contentDescription = null) },
                         onClick = { menuOpen = false; onSettings() },
                     )
                 }
@@ -96,12 +106,35 @@ fun BottomBar(
     }
 }
 
+/** Icon button (48dp touch target) with a small visible label; the label is hidden from screen readers. */
+@Composable
+private fun MenuAction(icon: ImageVector, label: String, enabled: Boolean, onClick: () -> Unit) {
+    Column(
+        modifier = Modifier.widthIn(min = 56.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        IconButton(onClick = onClick, enabled = enabled) {
+            Icon(icon, contentDescription = label, modifier = Modifier.size(22.dp))
+        }
+        Text(
+            label,
+            style = MaterialTheme.typography.labelSmall,
+            color = if (enabled) {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            } else {
+                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+            },
+            modifier = Modifier.clearAndSetSemantics { },
+        )
+    }
+}
+
 /** Square badge with the number of open tabs; opens the tab switcher. */
 @Composable
 private fun TabCountButton(count: Int, onClick: () -> Unit) {
     IconButton(
         onClick = onClick,
-        modifier = Modifier.semantics { contentDescription = "Tabs: $count open" },
+        modifier = Modifier.semantics { contentDescription = BottomMenuText.tabsDescription(count) },
     ) {
         Box(
             Modifier
