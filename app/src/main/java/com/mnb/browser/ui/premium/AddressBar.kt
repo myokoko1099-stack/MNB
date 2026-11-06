@@ -76,7 +76,7 @@ fun AddressPill(
             )
             Text(
                 text = currentUrl.takeIf { it.isNotBlank() }?.let(UrlUtils::simplifyForDisplay)
-                    ?: "Search or enter address",
+                    ?: AddressInput.SEARCH_HINT,
                 style = TextStyle(
                     fontSize = 14.sp,
                     color = if (currentUrl.isNotBlank()) MaterialTheme.colorScheme.onSurface
@@ -100,6 +100,14 @@ fun AddressPill(
     }
 }
 
+/**
+ * Full-screen address field.
+ *
+ * It opens with [overlayTextValue] already holding the current address (the caller puts the cursor
+ * at the end, nothing is pre-selected), so tapping the bar never loses the URL. The text only
+ * changes when the user edits it or presses the clear button. Submitting unchanged text just
+ * closes the overlay ([AddressInput.onSubmit]); new text is passed to [onNavigate].
+ */
 @Composable
 fun AddressBarOverlay(
     currentUrl: String,
@@ -141,7 +149,7 @@ fun AddressBarOverlay(
                 ) {
                     if (overlayTextValue.text.isEmpty()) {
                         Text(
-                            text = "Search or enter address",
+                            text = AddressInput.SEARCH_HINT,
                             style = TextStyle(
                                 fontSize = 16.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -165,20 +173,31 @@ fun AddressBarOverlay(
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
                         keyboardActions = KeyboardActions(
                             onGo = {
-                                val text = overlayTextValue.text.trim()
-                                if (text.isNotEmpty()) onNavigate(text) else onDismiss()
+                                when (val action = AddressInput.onSubmit(currentUrl, overlayTextValue.text)) {
+                                    AddressInput.Action.Dismiss -> onDismiss()
+                                    is AddressInput.Action.Navigate -> onNavigate(action.text)
+                                }
                             },
                         ),
                     )
                 }
 
-                IconButton(onClick = { onOverlayTextChange(TextFieldValue("")) }) {
-                    Icon(
-                        Icons.Default.Close,
-                        contentDescription = "Clear text",
-                        modifier = Modifier.size(20.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                if (overlayTextValue.text.isNotEmpty()) {
+                    IconButton(
+                        onClick = {
+                            onOverlayTextChange(TextFieldValue(""))
+                            overlayFocusRequester.requestFocus()
+                        },
+                    ) {
+                        Icon(
+                            Icons.Default.Close,
+                            contentDescription = "Clear text",
+                            modifier = Modifier.size(20.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                } else {
+                    Spacer(Modifier.size(48.dp))
                 }
             }
 

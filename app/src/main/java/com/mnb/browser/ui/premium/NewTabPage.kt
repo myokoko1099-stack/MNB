@@ -1,14 +1,16 @@
 // Derived from Hydrogen Browser (MIT), copyright 2022 Liu Zihao, modified for MNB. See THIRD_PARTY_NOTICES.md
 package com.mnb.browser.ui.premium
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -17,9 +19,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Search
@@ -27,9 +30,11 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -38,27 +43,31 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-private val shortcutColors = listOf(
-    Color(0xFF4285F4),
-    Color(0xFFEA4335),
-    Color(0xFFFBBC05),
-    Color(0xFF34A853),
-    Color(0xFFFF6D00),
-    Color(0xFF9C27B0),
-    Color(0xFF00BCD4),
-    Color(0xFF795548),
+/** Tile colours for favorites that are not bundled sites (all dark enough for white text). */
+private val fallbackColors = listOf(
+    Color(0xFF3F51B5),
+    Color(0xFFB3261E),
+    Color(0xFF2E7D32),
+    Color(0xFFE65100),
+    Color(0xFF6A1B9A),
+    Color(0xFF00695C),
+    Color(0xFF5D4037),
+    Color(0xFF37474F),
 )
 
 private fun colorForUrl(url: String): Color {
-    val index = Math.floorMod(url.hashCode(), shortcutColors.size)
-    return shortcutColors[index]
+    val index = Math.floorMod(url.hashCode(), fallbackColors.size)
+    return fallbackColors[index]
 }
 
 private fun firstLetterOf(url: String): String {
@@ -68,6 +77,9 @@ private fun firstLetterOf(url: String): String {
         .removePrefix("www.")
     return host.firstOrNull()?.uppercase() ?: "?"
 }
+
+private val TILE_TARGET_WIDTH: Dp = 84.dp
+private val CONTENT_MAX_WIDTH: Dp = 560.dp
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -80,56 +92,61 @@ fun NewTabPage(
     var editingIndex by remember { mutableIntStateOf(-1) }
     var showAddDialog by remember { mutableStateOf(false) }
 
-    Box(
+    // Gentle fade + rise when the page first appears.
+    var entered by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { entered = true }
+    val enterProgress by animateFloatAsState(
+        targetValue = if (entered) 1f else 0f,
+        animationSpec = tween(durationMillis = 320),
+        label = "ntp-enter",
+    )
+
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.surface),
+        contentAlignment = Alignment.TopCenter,
     ) {
+        // 3 to 5 tiles per row depending on the screen width (small phones 3, wide screens 5).
+        val columns = (maxWidth / TILE_TARGET_WIDTH).toInt().coerceIn(3, 5)
+        val topSpace = (maxHeight * 0.14f).coerceAtLeast(24.dp)
+
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier
+                .widthIn(max = CONTENT_MAX_WIDTH)
                 .fillMaxSize()
+                .graphicsLayer {
+                    alpha = enterProgress
+                    translationY = (1f - enterProgress) * 24.dp.toPx()
+                }
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp),
         ) {
-            Spacer(modifier = Modifier.weight(1f))
+            Spacer(Modifier.height(topSpace))
 
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(24.dp))
-                    .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-                    .clickable(onClick = onSearch)
-                    .padding(horizontal = 16.dp, vertical = 14.dp),
-                contentAlignment = Alignment.CenterStart,
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.Search,
-                        contentDescription = null,
-                        modifier = Modifier.size(19.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Spacer(Modifier.width(10.dp))
-                    Text(
-                        text = "Search or enter address",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            }
+            Text(
+                text = "MNB",
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
 
-            Spacer(modifier = Modifier.height(28.dp))
+            Spacer(Modifier.height(20.dp))
+
+            SearchEntry(onClick = onSearch)
+
+            Spacer(Modifier.height(32.dp))
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    text = "Favorites",
+                    text = "Novel sites",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
                 )
                 Spacer(Modifier.weight(1f))
                 Text(
@@ -139,49 +156,40 @@ fun NewTabPage(
                 )
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(Modifier.height(12.dp))
 
-            LazyRow(
-                modifier = Modifier.fillMaxWidth(),
-                contentPadding = PaddingValues(horizontal = 2.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                itemsIndexed(shortcuts, key = { index, item -> "$index:${item.url}" }) { index, shortcut ->
-                    NtpTile(
-                        label = shortcut.name,
-                        badgeColor = colorForUrl(shortcut.url),
-                        labelColor = MaterialTheme.colorScheme.onSurface,
-                        clickModifier = Modifier.combinedClickable(
-                            onClick = { onNavigate(shortcut.url) },
-                            onLongClick = { editingIndex = index },
-                        ),
-                    ) {
-                        Text(
-                            text = firstLetterOf(shortcut.url),
-                            color = Color.White,
-                            fontSize = 20.sp,
-                            fontWeight = FontWeight.Bold,
-                        )
+            // Shortcuts + the "Add" tile, laid out as a grid of equal-width cells.
+            val tileCount = shortcuts.size + 1
+            (0 until tileCount).chunked(columns).forEach { rowIndexes ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    rowIndexes.forEach { index ->
+                        Box(
+                            modifier = Modifier.weight(1f),
+                            contentAlignment = Alignment.TopCenter,
+                        ) {
+                            if (index < shortcuts.size) {
+                                val shortcut = shortcuts[index]
+                                SiteTile(
+                                    shortcut = shortcut,
+                                    onClick = { onNavigate(shortcut.url) },
+                                    onLongClick = { editingIndex = index },
+                                )
+                            } else {
+                                AddTile(onClick = { showAddDialog = true })
+                            }
+                        }
+                    }
+                    repeat(columns - rowIndexes.size) {
+                        Spacer(Modifier.weight(1f))
                     }
                 }
-                item(key = "add-favorite") {
-                    NtpTile(
-                        label = "Add",
-                        badgeColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                        labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                        clickModifier = Modifier.clickable { showAddDialog = true },
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Add,
-                            contentDescription = "Add favorite",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(24.dp),
-                        )
-                    }
-                }
+                Spacer(Modifier.height(6.dp))
             }
 
-            Spacer(modifier = Modifier.weight(1f))
+            Spacer(Modifier.height(24.dp))
         }
     }
 
@@ -226,36 +234,119 @@ fun NewTabPage(
     }
 }
 
+/** The big rounded search field. Tapping it opens the address overlay. */
+@Composable
+private fun SearchEntry(onClick: () -> Unit) {
+    val shape = RoundedCornerShape(28.dp)
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = shape,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shadowElevation = 3.dp,
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(shape)
+                .clickable(onClick = onClick)
+                .padding(horizontal = 18.dp, vertical = 16.dp),
+        ) {
+            Icon(
+                imageVector = Icons.Default.Search,
+                contentDescription = null,
+                modifier = Modifier.size(20.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.width(12.dp))
+            Text(
+                text = AddressInput.SEARCH_HINT,
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun SiteTile(
+    shortcut: Shortcut,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
+) {
+    val bundled = DefaultShortcuts.styleFor(shortcut.url)
+    val badgeColor = bundled?.let { Color(it.badgeColor) } ?: colorForUrl(shortcut.url)
+    val monogram = bundled?.monogram ?: firstLetterOf(shortcut.url)
+
+    NtpTile(
+        label = shortcut.name,
+        badgeColor = badgeColor,
+        clickModifier = Modifier.combinedClickable(
+            onClick = onClick,
+            onLongClick = onLongClick,
+        ),
+    ) {
+        Text(
+            text = monogram,
+            color = Color.White,
+            fontSize = if (monogram.length > 1) 18.sp else 22.sp,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+        )
+    }
+}
+
+@Composable
+private fun AddTile(onClick: () -> Unit) {
+    NtpTile(
+        label = "Add",
+        badgeColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+        clickModifier = Modifier.clickable(onClick = onClick),
+    ) {
+        Icon(
+            imageVector = Icons.Default.Add,
+            contentDescription = "Add favorite",
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(26.dp),
+        )
+    }
+}
+
 @Composable
 private fun NtpTile(
     label: String,
     badgeColor: Color,
-    labelColor: Color,
     clickModifier: Modifier,
     badge: @Composable () -> Unit,
 ) {
+    val badgeShape = RoundedCornerShape(18.dp)
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
-            .width(72.dp)
-            .clip(RoundedCornerShape(14.dp))
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
             .then(clickModifier)
-            .padding(vertical = 8.dp, horizontal = 4.dp),
+            .padding(vertical = 8.dp, horizontal = 2.dp),
     ) {
         Box(
             modifier = Modifier
-                .size(48.dp)
-                .clip(RoundedCornerShape(15.dp))
+                .size(56.dp)
+                .shadow(elevation = 2.dp, shape = badgeShape)
+                .clip(badgeShape)
                 .background(badgeColor),
             contentAlignment = Alignment.Center,
             content = { badge() },
         )
-        Spacer(Modifier.height(7.dp))
+        Spacer(Modifier.height(8.dp))
         Text(
             text = label,
             style = MaterialTheme.typography.bodySmall,
-            color = labelColor,
-            maxLines = 1,
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 2,
+            minLines = 2,
             overflow = TextOverflow.Ellipsis,
             textAlign = TextAlign.Center,
             modifier = Modifier.fillMaxWidth(),

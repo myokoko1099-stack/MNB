@@ -26,7 +26,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -82,18 +81,25 @@ fun BrowserScreen(
     var addressOpen by rememberSaveable { mutableStateOf(false) }
     var settingsOpen by rememberSaveable { mutableStateOf(false) }
     var switcherOpen by rememberSaveable { mutableStateOf(false) }
-    var addressValue by remember { mutableStateOf(TextFieldValue("")) }
+    // Saveable, so the text being edited survives a rotation / process death together with addressOpen.
+    var addressValue by rememberSaveable(stateSaver = TextFieldValue.Saver) {
+        mutableStateOf(TextFieldValue(""))
+    }
 
     val readerOpen = readerContent != null
     val extractionOpen = extractionUi !is ExtractionState.Idle
     val overlayOpen = readerOpen || extractionOpen || addressOpen || settingsOpen || switcherOpen
     val isNewTab = state.currentUrl.isBlank() || state.currentUrl.trimEnd('/') == UrlPolicy.HOME_URL.trimEnd('/')
+    // On the new-tab page the blank home address is an implementation detail: never show or edit it.
+    val shownUrl = if (isNewTab) "" else state.currentUrl
     val activeTab = tabManager.activeTab
 
     fun openAddress(initialText: String) {
+        // Keep the whole address and put the cursor at its end. Nothing is pre-selected, so the
+        // first key press cannot wipe the URL; the user selects or clears it on purpose.
         addressValue = TextFieldValue(
             text = initialText,
-            selection = TextRange(0, initialText.length),
+            selection = TextRange(initialText.length),
         )
         addressOpen = true
     }
@@ -114,19 +120,18 @@ fun BrowserScreen(
     BackHandler(enabled = extractionOpen) { extraction.close() }
     BackHandler(enabled = readerOpen) { readerState.close() }
 
-    LaunchedEffect(addressOpen) {
-        if (addressOpen) addressFocusRequester.requestFocus()
-    }
+    // Focus is requested by AddressBarOverlay itself, once its text field exists. Requesting it
+    // from here could run while the overlay is hidden (e.g. the reader is open) and would crash.
 
     Scaffold(
         bottomBar = {
             if (!overlayOpen) {
                 BottomBar(
-                    currentUrl = state.currentUrl,
+                    currentUrl = shownUrl,
                     canGoBack = state.canGoBack,
                     canGoForward = state.canGoForward,
                     extractEnabled = state.currentUrl.isNotBlank() && !state.isLoading && state.error == null,
-                    onAddressClick = { openAddress(state.currentUrl) },
+                    onAddressClick = { openAddress(shownUrl) },
                     onBack = { navigation.back() },
                     onForward = { navigation.forward() },
                     onHome = { navigation.home() },
@@ -203,7 +208,7 @@ fun BrowserScreen(
 
             if (addressOpen && !readerOpen && !extractionOpen && !settingsOpen) {
                 AddressBarOverlay(
-                    currentUrl = state.currentUrl,
+                    currentUrl = shownUrl,
                     pageTitle = state.title,
                     overlayTextValue = addressValue,
                     overlayFocusRequester = addressFocusRequester,
