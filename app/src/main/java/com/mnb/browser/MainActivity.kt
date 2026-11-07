@@ -1,5 +1,6 @@
 package com.mnb.browser
 
+import android.content.ComponentCallbacks2
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -217,6 +218,18 @@ class MainActivity : ComponentActivity() {
                     )
                 }
             }
+        }
+    }
+
+    /**
+     * Phase 2F: when the running app is short of memory, background tabs give up their WebView. They
+     * are rebuilt from their saved state when shown again. Other levels (UI hidden, background) are
+     * ignored on purpose: leaving the app must not discard the user's tabs.
+     */
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        if (level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW && level < ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN) {
+            webController.trimBackgroundViews()
         }
     }
 
