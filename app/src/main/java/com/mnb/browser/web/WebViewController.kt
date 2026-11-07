@@ -52,9 +52,19 @@ class WebViewController(
     /** Receives address/title changes of any tab, also tabs in the background. Main thread. */
     var pageListener: ((tabId: String, url: String?, title: String?) -> Unit)? = null
 
+    /**
+     * Phase 2E: called once per finished page load of any tab, but only when the load had no
+     * main-frame error (network, HTTP or SSL). May be called more than once for the same page
+     * (redirects, repeated callbacks), so the receiver must de-duplicate. Main thread.
+     */
+    var visitListener: ((tabId: String, url: String?, title: String?) -> Unit)? = null
+
     private val views = HashMap<String, WebView>()
     private val stores = HashMap<String, WebSessionStore>()
     private var activeId: String? = null
+
+    /** Tabs whose current main-frame load failed; such a load is not a visit. Main thread. */
+    private val failedLoads = HashSet<String>()
 
     /**
      * Shows the WebView of [tabId] inside [host] (creating or restoring it when needed). Safe to call
@@ -79,6 +89,7 @@ class WebViewController(
         views.remove(tabId)?.let { destroyView(it) }
         if (activeId == tabId) activeId = null
         stores.remove(tabId)
+        failedLoads.remove(tabId)
         sessionStoreFactory?.invoke(tabId)?.let { store -> runIo { store.clear() } }
     }
 
@@ -124,6 +135,7 @@ class WebViewController(
         for (view in views.values) destroyView(view)
         views.clear()
         stores.clear()
+        failedLoads.clear()
         activeId = null
     }
 
@@ -254,6 +266,7 @@ class WebViewController(
         }
 
         override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) {
+            failedLoads.remove(tabId)
             if (isActive()) stateManager.onPageStarted(url)
         }
 
@@ -263,6 +276,7 @@ class WebViewController(
                 stateManager.onHistoryChanged(url, view.canGoBack(), view.canGoForward())
             }
             pageListener?.invoke(tabId, view.url ?: url, view.title)
+            if (tabId !in failedLoads) visitListener?.invoke(tabId, view.url ?: url, view.title)
         }
 
         override fun doUpdateVisitedHistory(view: WebView, url: String?, isReload: Boolean) {
@@ -271,6 +285,7 @@ class WebViewController(
         }
 
         override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
+            if (request.isForMainFrame) failedLoads.add(tabId)
             if (!request.isForMainFrame || !isActive()) return
             stateManager.onError(
                 ErrorHandler.fromWebError(error.errorCode, error.description?.toString(), request.url.toString())
@@ -278,6 +293,7 @@ class WebViewController(
         }
 
         override fun onReceivedHttpError(view: WebView, request: WebResourceRequest, errorResponse: WebResourceResponse) {
+            if (request.isForMainFrame) failedLoads.add(tabId)
             if (!request.isForMainFrame || !isActive()) return
             stateManager.onError(
                 ErrorHandler.fromHttp(errorResponse.statusCode, errorResponse.reasonPhrase, request.url.toString())
@@ -287,6 +303,7 @@ class WebViewController(
         /** Never continue past an SSL error, in any tab; certificate validation is not bypassed. */
         override fun onReceivedSslError(view: WebView, handler: SslErrorHandler, error: SslError) {
             handler.cancel()
+            failedLoads.add(tabId)
             if (isActive()) stateManager.onError(ErrorHandler.fromSsl(error))
         }
     }
