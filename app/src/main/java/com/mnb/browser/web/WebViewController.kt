@@ -12,6 +12,7 @@ import android.webkit.ConsoleMessage
 import android.webkit.CookieManager
 import android.webkit.GeolocationPermissions
 import android.webkit.PermissionRequest
+import android.webkit.RenderProcessGoneDetail
 import android.webkit.SslErrorHandler
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
@@ -20,9 +21,13 @@ import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import com.mnb.browser.error.ErrorHandler
 import com.mnb.browser.extraction.ExtractionScript
 import com.mnb.browser.navigation.UrlPolicy
+import com.mnb.browser.state.BrowserError
 import com.mnb.browser.state.BrowserStateManager
 import java.util.concurrent.Executor
 import java.util.concurrent.RejectedExecutionException
@@ -42,12 +47,32 @@ import java.util.concurrent.RejectedExecutionException
  *   store. Only the page state and navigation history are per tab.
  * - Events (progress, errors) of tabs in the background never reach the UI state; security
  *   decisions (SSL errors, permissions, URL policy) are applied to every tab.
+ *
+ * Phase 2F (lifecycle and resilience):
+ * - At most [maxLiveViews] WebViews stay alive. When more are open, the least recently used
+ *   background tabs are unloaded: their state is saved first and the WebView is rebuilt from it the
+ *   next time the tab is shown. The active tab is never unloaded.
+ * - When the system asks for memory ([trimBackgroundViews]) every background WebView is unloaded.
+ * - A renderer crash or kill ([Client.onRenderProcessGone]) never takes the app down: the dead
+ *   WebView is destroyed and the active tab is rebuilt from its saved state. A tab that crashes
+ *   again right after that (see [CrashLoopGuard]) is not restored; it opens the home page and shows
+ *   an error with "Retry" instead.
  */
 class WebViewController(
     private val stateManager: BrowserStateManager,
     private val sessionStoreFactory: ((tabId: String) -> WebSessionStore)? = null,
     private val ioExecutor: Executor = Executor { task -> task.run() },
+    private val maxLiveViews: Int = LiveTabPolicy.DEFAULT_MAX_LIVE,
+    private val clock: () -> Long = { System.currentTimeMillis() },
+    private val crashGuard: CrashLoopGuard = CrashLoopGuard(),
 ) {
+
+    /**
+     * Changes every time the active tab's WebView had to be thrown away and must be mounted again
+     * (renderer crash). The screen reads it, so it recomposes and calls [mount]. Main thread.
+     */
+    var recoveryTick by mutableStateOf(0)
+        private set
 
     /** Receives address/title changes of any tab, also tabs in the background. Main thread. */
     var pageListener: ((tabId: String, url: String?, title: String?) -> Unit)? = null
@@ -65,6 +90,21 @@ class WebViewController(
 
     /** Tabs whose current main-frame load failed; such a load is not a visit. Main thread. */
     private val failedLoads = HashSet<String>()
+
+    /** Tabs that have a WebView, least recently shown first. Main thread. */
+    private val useOrder = ArrayList<String>()
+
+    /**
+     * State of tabs that were unloaded, kept until the tab is shown again, so a fast switch back
+     * never reads an older file while the background write is still queued. Main thread.
+     */
+    private val unloadedStates = HashMap<String, ByteArray>()
+
+    /**
+     * Crash-looping tabs: they restart on the home page, and the error is shown once that page has
+     * finished loading (starting a page clears errors, so showing it earlier would lose it). Main thread.
+     */
+    private val haltedTabs = HashMap<String, BrowserError>()
 
     /**
      * Shows the WebView of [tabId] inside [host] (creating or restoring it when needed). Safe to call
@@ -90,7 +130,19 @@ class WebViewController(
         if (activeId == tabId) activeId = null
         stores.remove(tabId)
         failedLoads.remove(tabId)
+        useOrder.remove(tabId)
+        unloadedStates.remove(tabId)
+        haltedTabs.remove(tabId)
+        crashGuard.forget(tabId)
         sessionStoreFactory?.invoke(tabId)?.let { store -> runIo { store.clear() } }
+    }
+
+    /**
+     * The system is short of memory: unloads the WebView of every tab except the active one. Each
+     * of them is saved first and comes back, with its history, when the tab is shown again.
+     */
+    fun trimBackgroundViews() {
+        for (id in LiveTabPolicy.tabsToUnload(liveIdsOldestFirst(), activeId, maxLive = 1)) unloadTab(id)
     }
 
     fun load(url: String) { activeView()?.loadUrl(url) }
@@ -136,6 +188,9 @@ class WebViewController(
         views.clear()
         stores.clear()
         failedLoads.clear()
+        useOrder.clear()
+        unloadedStates.clear()
+        haltedTabs.clear()
         activeId = null
     }
 
@@ -150,6 +205,8 @@ class WebViewController(
             }
         }
         activeId = tabId
+        useOrder.remove(tabId)
+        useOrder.add(tabId)
         view.onResume()
         stateManager.onTabSwitched(
             url = view.url ?: fallbackUrl,
@@ -158,6 +215,58 @@ class WebViewController(
             canGoForward = view.canGoForward(),
             progress = view.progress,
         )
+        unloadExcessViews()
+    }
+
+    /** Tabs that have a WebView, least recently shown first. */
+    private fun liveIdsOldestFirst(): List<String> = views.keys.sortedBy { useOrder.indexOf(it) }
+
+    private fun unloadExcessViews() {
+        for (id in LiveTabPolicy.tabsToUnload(liveIdsOldestFirst(), activeId, maxLiveViews)) unloadTab(id)
+    }
+
+    /**
+     * Throws away the WebView of a background tab but keeps the tab: its state is saved (in memory
+     * at once, on disk in the background) and the next [mount] of it rebuilds the WebView from that.
+     */
+    private fun unloadTab(tabId: String) {
+        if (tabId == activeId) return
+        val view = views.remove(tabId) ?: return
+        useOrder.remove(tabId)
+        failedLoads.remove(tabId)
+        val bytes = snapshot(view)
+        if (bytes != null) {
+            unloadedStates[tabId] = bytes
+            storeFor(tabId)?.let { store -> runIo { store.save(bytes) } }
+        }
+        destroyView(view)
+    }
+
+    /**
+     * The renderer behind [view] crashed or was killed by the system. Such a WebView can never be
+     * used again: it is detached and destroyed. If it belonged to the active tab, the tab is built
+     * again (see [recoveryTick]); a tab in the background is simply rebuilt when it is shown next.
+     */
+    private fun onRenderGone(tabId: String, view: WebView, didCrash: Boolean) {
+        if (views[tabId] !== view) return // already replaced or unloaded
+        val wasActive = tabId == activeId
+        val pageUrl = try { view.url } catch (e: Exception) { null }
+        views.remove(tabId)
+        useOrder.remove(tabId)
+        failedLoads.remove(tabId)
+        destroyView(view)
+        val looping = didCrash && crashGuard.recordCrash(tabId, clock())
+        if (looping) {
+            // Rebuilding the same page would crash again: forget its state and start on the home page.
+            unloadedStates.remove(tabId)
+            storeFor(tabId)?.let { store -> runIo { store.clear() } }
+            val retryUrl = pageUrl?.takeIf { UrlPolicy.checkNavigation(it) == UrlPolicy.Decision.Allow }
+            haltedTabs[tabId] = ErrorHandler.renderGone(retryUrl)
+        }
+        if (wasActive) {
+            activeId = null
+            recoveryTick++
+        }
     }
 
     private fun createWebView(context: Context, tabId: String, initialUrl: String): WebView {
@@ -166,7 +275,11 @@ class WebViewController(
         view.webViewClient = Client(tabId)
         view.webChromeClient = Chrome(tabId)
         views[tabId] = view
-        if (!restoreSession(tabId, view)) view.loadUrl(allowedUrl(initialUrl))
+        if (tabId in haltedTabs) {
+            view.loadUrl(UrlPolicy.HOME_URL)
+        } else if (!restoreSession(tabId, view)) {
+            view.loadUrl(allowedUrl(initialUrl))
+        }
         return view
     }
 
@@ -218,13 +331,13 @@ class WebViewController(
         }
     }
 
-    private fun saveSession(tabId: String, view: WebView) {
-        val store = storeFor(tabId) ?: return
-        if (view.url == null) return
+    /** The page and history of [view] as bytes, or null when there is nothing worth saving. */
+    private fun snapshot(view: WebView): ByteArray? {
+        if (view.url == null) return null
         val state = Bundle()
-        if (view.saveState(state) == null) return
+        if (view.saveState(state) == null) return null
         val parcel = Parcel.obtain()
-        val bytes: ByteArray? = try {
+        return try {
             parcel.writeBundle(state)
             parcel.marshall()
         } catch (e: Exception) {
@@ -232,11 +345,17 @@ class WebViewController(
         } finally {
             parcel.recycle()
         }
-        if (bytes != null) runIo { store.save(bytes) }
+    }
+
+    private fun saveSession(tabId: String, view: WebView) {
+        val store = storeFor(tabId) ?: return
+        val bytes = snapshot(view) ?: return
+        runIo { store.save(bytes) }
     }
 
     private fun restoreSession(tabId: String, view: WebView): Boolean {
-        val bytes = storeFor(tabId)?.load() ?: return false
+        // A tab that was just unloaded has its newest state in memory; the file may not be written yet.
+        val bytes = unloadedStates.remove(tabId) ?: storeFor(tabId)?.load() ?: return false
         val parcel = Parcel.obtain()
         return try {
             parcel.unmarshall(bytes, 0, bytes.size)
@@ -271,9 +390,12 @@ class WebViewController(
         }
 
         override fun onPageFinished(view: WebView, url: String?) {
+            // The first finished page of a crash-looping tab is the home page it restarted on.
+            val haltNotice = haltedTabs.remove(tabId)
             if (isActive()) {
                 stateManager.onPageFinished(url)
                 stateManager.onHistoryChanged(url, view.canGoBack(), view.canGoForward())
+                if (haltNotice != null) stateManager.onError(haltNotice)
             }
             pageListener?.invoke(tabId, view.url ?: url, view.title)
             if (tabId !in failedLoads) visitListener?.invoke(tabId, view.url ?: url, view.title)
@@ -298,6 +420,15 @@ class WebViewController(
             stateManager.onError(
                 ErrorHandler.fromHttp(errorResponse.statusCode, errorResponse.reasonPhrase, request.url.toString())
             )
+        }
+
+        /**
+         * The renderer behind this WebView died. Returning true keeps the app alive; returning false
+         * (the default) would crash it. The WebView is unusable and is replaced, see [onRenderGone].
+         */
+        override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
+            onRenderGone(tabId, view, detail.didCrash())
+            return true
         }
 
         /** Never continue past an SSL error, in any tab; certificate validation is not bypassed. */

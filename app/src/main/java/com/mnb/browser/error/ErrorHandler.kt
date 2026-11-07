@@ -51,4 +51,15 @@ fun blocked(url: String, reason: String = "This link type is not allowed.") = Br
     failingUrl = null,
 )
 
+/**
+ * Phase 2F: the page's renderer crashed again right after the tab was rebuilt, so the tab was not
+ * restored automatically. [failingUrl] lets the user try the page once more; null hides "Retry".
+ */
+fun renderGone(failingUrl: String?) = BrowserError(
+    ErrorKind.UNKNOWN,
+    "This page keeps crashing",
+    "The page stopped working more than once, so it was not reopened automatically. You can try it again.",
+    failingUrl = failingUrl?.takeIf { it.isNotBlank() },
+)
+
 }

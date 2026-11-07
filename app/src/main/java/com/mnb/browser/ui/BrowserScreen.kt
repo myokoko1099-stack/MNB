@@ -28,6 +28,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -174,11 +175,15 @@ fun BrowserScreen(
             if (activeTab != null) {
                 val activeId = activeTab.id
                 val activeUrl = activeTab.url
-                AndroidView(
-                    factory = { context -> FrameLayout(context) },
-                    update = { host -> webController.mount(host, activeId, activeUrl) },
-                    modifier = Modifier.fillMaxSize(),
-                )
+                // Phase 2F: after a renderer crash the active tab's WebView is gone. The tick changes
+                // then, so the host is built again and the tab is mounted from its saved state.
+                key(webController.recoveryTick) {
+                    AndroidView(
+                        factory = { context -> FrameLayout(context) },
+                        update = { host -> webController.mount(host, activeId, activeUrl) },
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
             }
 
             if (isNewTab && state.error == null && !overlayOpen) {
