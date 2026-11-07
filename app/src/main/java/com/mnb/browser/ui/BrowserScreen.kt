@@ -26,6 +26,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -43,6 +44,8 @@ import androidx.compose.ui.viewinterop.AndroidView
 import com.mnb.browser.extraction.ExtractionController
 import com.mnb.browser.extraction.ExtractionState
 import com.mnb.browser.extraction.ExtractionStateManager
+import com.mnb.browser.library.BrowserLibrary
+import com.mnb.browser.library.PageRules
 import com.mnb.browser.navigation.NavigationController
 import com.mnb.browser.navigation.UrlPolicy
 import com.mnb.browser.reader.ReaderPositionRepository
@@ -56,6 +59,8 @@ import com.mnb.browser.ui.premium.AddressBarOverlay
 import com.mnb.browser.ui.premium.BottomBar
 import com.mnb.browser.ui.premium.NewTabPage
 import com.mnb.browser.ui.premium.PremiumSettings
+import com.mnb.browser.ui.library.BookmarksScreen
+import com.mnb.browser.ui.library.HistoryScreen
 import com.mnb.browser.ui.premium.UiPreferences
 import com.mnb.browser.ui.tabs.TabSwitcher
 
@@ -71,6 +76,7 @@ fun BrowserScreen(
     readerSettings: ReaderSettingsRepository,
     uiPreferences: UiPreferences,
     tabManager: TabManager,
+    library: BrowserLibrary,
 ) {
     val state = stateManager.state
     val extractionUi = extractionState.state
@@ -81,6 +87,8 @@ fun BrowserScreen(
     var addressOpen by rememberSaveable { mutableStateOf(false) }
     var settingsOpen by rememberSaveable { mutableStateOf(false) }
     var switcherOpen by rememberSaveable { mutableStateOf(false) }
+    var bookmarksOpen by rememberSaveable { mutableStateOf(false) }
+    var historyOpen by rememberSaveable { mutableStateOf(false) }
     // Saveable, so the text being edited survives a rotation / process death together with addressOpen.
     var addressValue by rememberSaveable(stateSaver = TextFieldValue.Saver) {
         mutableStateOf(TextFieldValue(""))
@@ -88,11 +96,20 @@ fun BrowserScreen(
 
     val readerOpen = readerContent != null
     val extractionOpen = extractionUi !is ExtractionState.Idle
-    val overlayOpen = readerOpen || extractionOpen || addressOpen || settingsOpen || switcherOpen
+    val overlayOpen = readerOpen || extractionOpen || addressOpen || settingsOpen || switcherOpen ||
+        bookmarksOpen || historyOpen
     val isNewTab = state.currentUrl.isBlank() || state.currentUrl.trimEnd('/') == UrlPolicy.HOME_URL.trimEnd('/')
     // On the new-tab page the blank home address is an implementation detail: never show or edit it.
     val shownUrl = if (isNewTab) "" else state.currentUrl
     val activeTab = tabManager.activeTab
+    // A page can only be bookmarked once it has loaded without an error (never the new-tab page).
+    val canBookmark = PageRules.isRecordable(shownUrl) && state.error == null
+
+    // Phase 2E: keep the "bookmarked" state of the current page up to date, and (re)load a list
+    // whenever its screen opens, also after the screen was restored with the Activity.
+    LaunchedEffect(shownUrl) { library.checkBookmarked(shownUrl) }
+    LaunchedEffect(bookmarksOpen) { if (bookmarksOpen) library.refreshBookmarks() }
+    LaunchedEffect(historyOpen) { if (historyOpen) library.refreshHistory() }
 
     fun openAddress(initialText: String) {
         // Keep the whole address and put the cursor at its end. Nothing is pre-selected, so the
@@ -112,6 +129,8 @@ fun BrowserScreen(
 
     BackHandler(enabled = state.canGoBack && !overlayOpen) { navigation.back() }
     BackHandler(enabled = switcherOpen) { switcherOpen = false }
+    BackHandler(enabled = bookmarksOpen) { bookmarksOpen = false }
+    BackHandler(enabled = historyOpen) { historyOpen = false }
     BackHandler(enabled = addressOpen) {
         addressOpen = false
         focus.clearFocus()
@@ -140,6 +159,11 @@ fun BrowserScreen(
                     onSettings = { settingsOpen = true },
                     tabCount = tabManager.tabs.size,
                     onTabs = { switcherOpen = true },
+                    isBookmarked = library.currentBookmarked,
+                    bookmarkEnabled = canBookmark,
+                    onToggleBookmark = { library.toggleBookmark(shownUrl, state.title) },
+                    onBookmarks = { bookmarksOpen = true },
+                    onHistory = { historyOpen = true },
                 )
             }
         },
@@ -239,6 +263,43 @@ fun BrowserScreen(
                         if (tabManager.newTab() != null) switcherOpen = false
                     },
                     onDismiss = { switcherOpen = false },
+                )
+            }
+
+            AnimatedVisibility(
+                visible = bookmarksOpen && !readerOpen && !extractionOpen,
+                enter = fadeIn() + scaleIn(initialScale = 0.94f),
+                exit = fadeOut() + scaleOut(targetScale = 0.94f),
+            ) {
+                BookmarksScreen(
+                    entries = library.bookmarks,
+                    state = library.bookmarksState,
+                    onOpen = { url ->
+                        bookmarksOpen = false
+                        navigate(url)
+                    },
+                    onDelete = { id -> library.removeBookmark(id) },
+                    onRetry = { library.refreshBookmarks() },
+                    onClose = { bookmarksOpen = false },
+                )
+            }
+
+            AnimatedVisibility(
+                visible = historyOpen && !readerOpen && !extractionOpen,
+                enter = fadeIn() + scaleIn(initialScale = 0.94f),
+                exit = fadeOut() + scaleOut(targetScale = 0.94f),
+            ) {
+                HistoryScreen(
+                    entries = library.history,
+                    state = library.historyState,
+                    onOpen = { url ->
+                        historyOpen = false
+                        navigate(url)
+                    },
+                    onDelete = { id -> library.removeHistoryEntry(id) },
+                    onClearAll = { library.clearHistory() },
+                    onRetry = { library.refreshHistory() },
+                    onClose = { historyOpen = false },
                 )
             }
         }

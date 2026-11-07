@@ -14,11 +14,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
@@ -39,6 +41,7 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import com.mnb.browser.library.LibraryText
 import com.mnb.browser.tabs.TabDisplay
 
 @Composable
@@ -56,6 +59,11 @@ fun BottomBar(
     onSettings: () -> Unit,
     tabCount: Int = 1,
     onTabs: () -> Unit = {},
+    isBookmarked: Boolean = false,
+    bookmarkEnabled: Boolean = false,
+    onToggleBookmark: () -> Unit = {},
+    onBookmarks: () -> Unit = {},
+    onHistory: () -> Unit = {},
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     Surface(color = MaterialTheme.colorScheme.surfaceContainer) {
@@ -94,6 +102,33 @@ fun BottomBar(
                             onRefresh()
                         }
                     }
+                    HorizontalDivider()
+                    DropdownMenuItem(
+                        text = { Text(LibraryText.bookmarkMenuLabel(isBookmarked)) },
+                        leadingIcon = {
+                            Icon(
+                                Icons.Default.Star,
+                                contentDescription = null,
+                                tint = if (isBookmarked) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                },
+                            )
+                        },
+                        enabled = bookmarkEnabled,
+                        onClick = { menuOpen = false; onToggleBookmark() },
+                    )
+                    DropdownMenuItem(
+                        text = { Text(LibraryText.MENU_BOOKMARKS) },
+                        leadingIcon = { Icon(Icons.Default.List, contentDescription = null) },
+                        onClick = { menuOpen = false; onBookmarks() },
+                    )
+                    DropdownMenuItem(
+                        text = { Text(LibraryText.MENU_HISTORY) },
+                        leadingIcon = { Icon(Icons.Default.DateRange, contentDescription = null) },
+                        onClick = { menuOpen = false; onHistory() },
+                    )
                     HorizontalDivider()
                     DropdownMenuItem(
                         text = { Text("Settings") },

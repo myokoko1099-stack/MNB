@@ -10,6 +10,7 @@ import androidx.compose.runtime.remember
 import androidx.work.WorkManager
 import com.mnb.browser.extraction.ExtractionController
 import com.mnb.browser.extraction.ExtractionStateManager
+import com.mnb.browser.library.BrowserLibrary
 import com.mnb.browser.navigation.NavigationController
 import com.mnb.browser.reader.ReaderPositionRepository
 import com.mnb.browser.reader.ReaderSettingsRepository
@@ -76,6 +77,17 @@ class MainActivity : ComponentActivity() {
         mainPoster = { task -> mainHandler.post(task) },
     )
     private val navigation = NavigationController(webController, stateManager)
+
+    // Phase 2E: bookmarks and history. The blocking Room calls of BrowserDataRepository all run on
+    // this one background thread, one after another; results come back on the main thread.
+    private val libraryIoExecutorLazy: Lazy<ExecutorService> = lazy {
+        Executors.newSingleThreadExecutor { r -> Thread(r, "mnb-library").apply { isDaemon = true } }
+    }
+    private val library = BrowserLibrary(
+        repositoryFactory = { BrowserDataRepository(MnbDatabase.getInstance(applicationContext)) },
+        ioExecutor = Executor { task -> libraryIoExecutorLazy.value.execute(task) },
+        mainPoster = { task -> mainHandler.post(task) },
+    )
     private val extractionState = ExtractionStateManager()
     private val extraction = ExtractionController(webController, extractionState)
 
@@ -183,7 +195,12 @@ class MainActivity : ComponentActivity() {
         // Phase 2B: page changes of any tab update that tab's stored address and title; a closed tab
         // loses its WebView and session file; the stored tabs are loaded on the background thread.
         webController.pageListener = { tabId, url, title -> tabManager.updatePage(tabId, url, title) }
-        tabManager.onTabClosed = { tabId -> webController.closeTab(tabId) }
+        // Phase 2E: a finished page load (without an error) is a history visit.
+        webController.visitListener = { tabId, url, title -> library.recordVisit(tabId, url, title) }
+        tabManager.onTabClosed = { tabId ->
+            webController.closeTab(tabId)
+            library.forgetTab(tabId)
+        }
         tabManager.onRestored = { openIds -> tabIo.execute { tabFiles.prune(openIds) } }
         tabManager.restore()
         setContent {
@@ -196,6 +213,7 @@ class MainActivity : ComponentActivity() {
                     BrowserScreen(
                         stateManager, webController, navigation, extraction, extractionState,
                         readerState, readerPositions, readerSettings, uiPreferences, tabManager,
+                        library,
                     )
                 }
             }
@@ -212,6 +230,8 @@ class MainActivity : ComponentActivity() {
         if (geminiKeyExecutorLazy.isInitialized()) geminiKeyExecutorLazy.value.shutdownNow()
         // Let the queued tab and session writes finish; no new ones are accepted.
         if (tabIoExecutorLazy.isInitialized()) tabIoExecutorLazy.value.shutdown()
+        // Same for queued bookmark and history writes.
+        if (libraryIoExecutorLazy.isInitialized()) libraryIoExecutorLazy.value.shutdown()
         super.onDestroy()
     }
 }
