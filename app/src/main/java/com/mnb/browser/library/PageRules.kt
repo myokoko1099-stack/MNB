@@ -12,10 +12,10 @@ object PageRules {
     private const val HTTPS_PREFIX_LENGTH = 8 // "https://"
     const val MAX_URL_LENGTH = 4096
 
-    /** True for the empty address and for the new-tab (home) address. */
+    /** True for the empty address, about:blank and the new-tab address (never a real page, not even Google's). */
     fun isNewTab(url: String?): Boolean {
         if (url.isNullOrBlank()) return true
-        return url.trim().trimEnd('/').equals(UrlPolicy.HOME_URL.trimEnd('/'), ignoreCase = true)
+        return UrlPolicy.isNewTabAddress(url)
     }
 
     /** True when [url] is a real page worth a history entry or a bookmark. */

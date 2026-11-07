@@ -44,6 +44,57 @@ class BrowserDataRepository(private val db: MnbDatabase) {
     fun removeHistoryEntry(id: Long): Boolean = history.delete(id) > 0
     fun clearHistory() { history.clear() }
 
+    /**
+     * Visits whose title or address contains [query] (plain text, not a pattern), newest first. A blank
+     * [query] returns the newest visits, like [getRecentHistory].
+     */
+    fun searchHistory(query: String, limit: Int = 100): List<BrowserHistoryEntity> {
+        require(limit > 0)
+        val text = query.trim()
+        if (text.isEmpty()) return history.recent(limit)
+        return history.search(likePattern(text), limit)
+    }
+
+    /**
+     * Keeps the history from growing without limit (Phase 2G): removes visits older than [maxAgeMillis],
+     * then, if more than [maxEntries] remain, the oldest ones. The newest [maxEntries] visits that are
+     * not too old are always kept. One transaction. Returns how many rows were removed.
+     */
+    fun pruneHistory(
+        now: Long,
+        maxAgeMillis: Long = HISTORY_MAX_AGE_MILLIS,
+        maxEntries: Int = HISTORY_MAX_ENTRIES,
+    ): Int {
+        require(maxAgeMillis > 0)
+        require(maxEntries > 0)
+        var removed = 0
+        db.runInTransaction(
+            Runnable {
+                removed += history.deleteOlderThan(now - maxAgeMillis)
+                removed += history.trimToNewest(maxEntries)
+            },
+        )
+        return removed
+    }
+
+    companion object {
+        /** At most this many visits are kept. */
+        const val HISTORY_MAX_ENTRIES = 2000
+
+        /** Visits older than this (90 days) are removed. */
+        const val HISTORY_MAX_AGE_MILLIS = 90L * 24 * 60 * 60 * 1000
+
+        /** LIKE pattern matching [query] as plain text: percent, underscore and backslash are escaped. */
+        fun likePattern(query: String): String {
+            val escaped = StringBuilder()
+            for (c in query) {
+                if (c == '\\' || c == '%' || c == '_') escaped.append('\\')
+                escaped.append(c)
+            }
+            return "%$escaped%"
+        }
+    }
+
     fun saveTab(tab: BrowserTabEntity) {
         require(tab.tabId.isNotBlank())
         require(tab.url.isNotBlank())

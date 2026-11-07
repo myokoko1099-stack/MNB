@@ -49,6 +49,10 @@ class BrowserLibrary(
     private var latestCheckUrl: String? = null
     private var bookmarksLoaded = false
     private var historyLoaded = false
+    private var historyQuery = ""
+
+    // IO thread only: visits stored since the history was last pruned (the first visit prunes).
+    private var visitsSincePrune = PRUNE_EVERY
 
     // ---- Bookmarks -------------------------------------------------------------------------
 
@@ -120,6 +124,7 @@ class BrowserLibrary(
         val cleanTitle = LibraryText.cleanTitle(title)
         runIo {
             repository.recordVisit(page, cleanTitle, now)
+            pruneIfDue(now)
         }
     }
 
@@ -128,22 +133,28 @@ class BrowserLibrary(
         deduplicator.forget(tabId)
     }
 
-    /** Loads the newest [HISTORY_LIMIT] history entries, newest first. */
-    fun refreshHistory() {
+    /**
+     * Loads the newest [HISTORY_LIMIT] history entries, newest first. A non-blank [query] keeps only the
+     * visits whose title or address contains it. Only the answer to the latest query is shown.
+     */
+    fun refreshHistory(query: String = "") {
+        val asked = query.trim()
+        historyQuery = asked
         if (!historyLoaded) historyState = LoadState.Loading
         runIo(onFailure = { historyState = LoadState.Error }) {
-            val rows = loadHistoryRows()
-            onMain { applyHistory(rows) }
+            val rows = loadHistoryRows(asked)
+            onMain { if (historyQuery == asked) applyHistory(rows) }
         }
     }
 
     /** Deletes one history entry. The row disappears at once; the stored list is then reloaded. */
     fun removeHistoryEntry(id: Long) {
         history = history.filterNot { it.id == id }
+        val asked = historyQuery
         runIo(onFailure = { historyState = LoadState.Error }) {
             repository.removeHistoryEntry(id)
-            val rows = loadHistoryRows()
-            onMain { applyHistory(rows) }
+            val rows = loadHistoryRows(asked)
+            onMain { if (historyQuery == asked) applyHistory(rows) }
         }
     }
 
@@ -154,8 +165,8 @@ class BrowserLibrary(
         historyLoaded = true
         runIo(onFailure = { historyState = LoadState.Error }) {
             repository.clearHistory()
-            val rows = loadHistoryRows()
-            onMain { applyHistory(rows) }
+            // Nothing is left, whatever the search was.
+            onMain { applyHistory(emptyList()) }
         }
     }
 
@@ -163,8 +174,17 @@ class BrowserLibrary(
 
     private fun loadBookmarkRows(): List<LibraryEntry> = repository.getBookmarks().map { it.toEntry() }
 
-    private fun loadHistoryRows(): List<LibraryEntry> =
-        repository.getRecentHistory(HISTORY_LIMIT).map { it.toEntry() }
+    private fun loadHistoryRows(query: String): List<LibraryEntry> =
+        (if (query.isEmpty()) repository.getRecentHistory(HISTORY_LIMIT) else repository.searchHistory(query, HISTORY_LIMIT))
+            .map { it.toEntry() }
+
+    /** IO thread. Runs on the first stored visit, then after every [PRUNE_EVERY] visits (see Phase 2G). */
+    private fun pruneIfDue(now: Long) {
+        visitsSincePrune++
+        if (visitsSincePrune < PRUNE_EVERY) return
+        visitsSincePrune = 0
+        repository.pruneHistory(now)
+    }
 
     private fun applyBookmarks(rows: List<LibraryEntry>) {
         bookmarks = rows
@@ -216,5 +236,8 @@ class BrowserLibrary(
     companion object {
         /** How many history entries the History screen loads. */
         const val HISTORY_LIMIT = 200
+
+        /** The history is pruned on the first stored visit and then after this many stored visits. */
+        const val PRUNE_EVERY = 25
     }
 }

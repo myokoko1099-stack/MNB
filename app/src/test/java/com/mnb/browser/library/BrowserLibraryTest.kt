@@ -89,9 +89,9 @@ class BrowserLibraryTest : DbTestBase() {
         library.toggleBookmark("   ", "t")
         library.toggleBookmark("about:blank", "t")
         library.toggleBookmark("http://insecure.example.com/", "t")
-        library.toggleBookmark(UrlPolicy.HOME_URL, "New tab")
+        library.toggleBookmark(UrlPolicy.NEW_TAB_URL, "New tab")
         assertTrue(repo.getBookmarks().isEmpty())
-        library.checkBookmarked(UrlPolicy.HOME_URL)
+        library.checkBookmarked(UrlPolicy.NEW_TAB_URL)
         assertFalse(library.currentBookmarked)
     }
 
@@ -165,7 +165,7 @@ class BrowserLibraryTest : DbTestBase() {
     @Test fun invalidAddressesAreNeverRecorded() {
         listOf(
             null, "", "   ", "about:blank", "javascript:alert(1)", "file:///a", "http://insecure.example.com/",
-            "https://", UrlPolicy.HOME_URL, UrlPolicy.HOME_URL.trimEnd('/'),
+            "https://", UrlPolicy.NEW_TAB_URL, UrlPolicy.NEW_TAB_URL.uppercase(),
         ).forEachIndexed { i, url ->
             now = i * 100_000L
             library.recordVisit("t1", url, "t")

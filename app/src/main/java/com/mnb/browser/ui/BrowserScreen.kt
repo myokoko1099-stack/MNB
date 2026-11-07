@@ -26,6 +26,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -90,6 +91,9 @@ fun BrowserScreen(
     var switcherOpen by rememberSaveable { mutableStateOf(false) }
     var bookmarksOpen by rememberSaveable { mutableStateOf(false) }
     var historyOpen by rememberSaveable { mutableStateOf(false) }
+    var historyQuery by rememberSaveable { mutableStateOf("") }
+    // Phase 2G: a link the user long-pressed, waiting for "Open in new tab" (already checked by UrlPolicy).
+    var pendingLink by rememberSaveable { mutableStateOf<String?>(null) }
     // Saveable, so the text being edited survives a rotation / process death together with addressOpen.
     var addressValue by rememberSaveable(stateSaver = TextFieldValue.Saver) {
         mutableStateOf(TextFieldValue(""))
@@ -99,8 +103,10 @@ fun BrowserScreen(
     val extractionOpen = extractionUi !is ExtractionState.Idle
     val overlayOpen = readerOpen || extractionOpen || addressOpen || settingsOpen || switcherOpen ||
         bookmarksOpen || historyOpen
-    val isNewTab = state.currentUrl.isBlank() || state.currentUrl.trimEnd('/') == UrlPolicy.HOME_URL.trimEnd('/')
-    // On the new-tab page the blank home address is an implementation detail: never show or edit it.
+    // Only the app's own new-tab address (or no address) is the new-tab page. A real website, Google
+    // included, is always shown as a website.
+    val isNewTab = UrlPolicy.isNewTabAddress(state.currentUrl)
+    // On the new-tab page its internal address is an implementation detail: never show or edit it.
     val shownUrl = if (isNewTab) "" else state.currentUrl
     val activeTab = tabManager.activeTab
     // A page can only be bookmarked once it has loaded without an error (never the new-tab page).
@@ -110,7 +116,13 @@ fun BrowserScreen(
     // whenever its screen opens, also after the screen was restored with the Activity.
     LaunchedEffect(shownUrl) { library.checkBookmarked(shownUrl) }
     LaunchedEffect(bookmarksOpen) { if (bookmarksOpen) library.refreshBookmarks() }
-    LaunchedEffect(historyOpen) { if (historyOpen) library.refreshHistory() }
+    LaunchedEffect(historyOpen) { if (historyOpen) library.refreshHistory(historyQuery) else historyQuery = "" }
+
+    // Phase 2G: long press on a link of the active tab. The address is validated before anything is shown.
+    DisposableEffect(webController) {
+        webController.linkLongPressListener = { _, url -> UrlPolicy.linkTarget(url)?.let { pendingLink = it } }
+        onDispose { webController.linkLongPressListener = null }
+    }
 
     fun openAddress(initialText: String) {
         // Keep the whole address and put the cursor at its end. Nothing is pre-selected, so the
@@ -150,7 +162,7 @@ fun BrowserScreen(
                     currentUrl = shownUrl,
                     canGoBack = state.canGoBack,
                     canGoForward = state.canGoForward,
-                    extractEnabled = state.currentUrl.isNotBlank() && !state.isLoading && state.error == null,
+                    extractEnabled = !isNewTab && !state.isLoading && state.error == null,
                     onAddressClick = { openAddress(shownUrl) },
                     onBack = { navigation.back() },
                     onForward = { navigation.forward() },
@@ -206,6 +218,15 @@ fun BrowserScreen(
                     error = error,
                     onRetry = { navigation.refresh() },
                     onDismiss = { navigation.dismissError() },
+                )
+            }
+
+            pendingLink?.let { link ->
+                LinkDialog(
+                    link = link,
+                    canOpenNewTab = tabManager.canOpenNewTab,
+                    onOpenInNewTab = { if (tabManager.newTab(link) != null) pendingLink = null },
+                    onDismiss = { pendingLink = null },
                 )
             }
 
@@ -297,13 +318,18 @@ fun BrowserScreen(
                 HistoryScreen(
                     entries = library.history,
                     state = library.historyState,
+                    query = historyQuery,
+                    onQueryChange = { text ->
+                        historyQuery = text
+                        library.refreshHistory(text)
+                    },
                     onOpen = { url ->
                         historyOpen = false
                         navigate(url)
                     },
                     onDelete = { id -> library.removeHistoryEntry(id) },
                     onClearAll = { library.clearHistory() },
-                    onRetry = { library.refreshHistory() },
+                    onRetry = { library.refreshHistory(historyQuery) },
                     onClose = { historyOpen = false },
                 )
             }

@@ -10,10 +10,25 @@ import java.net.URLEncoder
  */
 object UrlPolicy {
     /**
-     * The blank "new tab" address. The new-tab page is drawn on top of it, so it is deliberately
-     * not the search engine: changing it would change how tabs are recognised as "new".
+     * A real website (Google). It is only a fallback address, e.g. for a tab that crashed repeatedly
+     * (Phase 2F); it is NOT the new-tab page, so a tab that shows it is a normal Google page.
      */
-    const val HOME_URL = "https://duckduckgo.com/"
+    const val HOME_URL = "https://www.google.com/"
+
+    /**
+     * Address of the app's own new-tab page. Nothing is ever requested from the network for it:
+     * the WebView of such a tab is left empty (or shows about:blank) and the app draws the page.
+     * ".invalid" can never resolve, so even a leak could not reach a real site.
+     */
+    const val NEW_TAB_URL = "https://mnb.invalid/new-tab"
+
+    /** What a WebView reports after the new-tab page was "loaded" with [BLANK_PAGE]. */
+    const val BLANK_PAGE = "about:blank"
+
+    /** Old default home address, only used to migrate tabs stored by earlier versions. */
+    private const val LEGACY_HOME_URL = "https://duckduckgo.com"
+
+    private const val MAX_LINK_LENGTH = 4096
 
     const val SEARCH_ENGINE_NAME = "Google"
     const val SEARCH_URL = "https://www.google.com/search?q="
@@ -65,6 +80,43 @@ object UrlPolicy {
 
     /** The search-engine results address for [query]; the query is UTF-8 percent-encoded. */
     fun searchUrl(query: String): String = SEARCH_URL + URLEncoder.encode(query, "UTF-8")
+
+    /** True for no address, about:blank and the new-tab address: pages that are never a real website. */
+    fun isNewTabAddress(url: String?): Boolean {
+        if (url.isNullOrBlank()) return true
+        val text = url.trim()
+        return text.equals(BLANK_PAGE, ignoreCase = true) ||
+            text.trimEnd('/').equals(NEW_TAB_URL, ignoreCase = true)
+    }
+
+    /** The address to tell tab and history code about: about:blank is reported as the new-tab address. */
+    fun reportedAddress(url: String?): String? =
+        if (url != null && url.trim().equals(BLANK_PAGE, ignoreCase = true)) NEW_TAB_URL else url
+
+    /** True for the home address that earlier versions used for new tabs (stored tabs are migrated). */
+    fun isLegacyHomeUrl(url: String?): Boolean =
+        url != null && url.trim().trimEnd('/').equals(LEGACY_HOME_URL, ignoreCase = true)
+
+    /**
+     * The address to open when the user long-presses a link and chooses "Open in new tab", or null
+     * when the link must not be opened: only https (http is upgraded), a real host, no whitespace,
+     * no new-tab address, and a sane length.
+     */
+    fun linkTarget(raw: String?): String? {
+        val text = raw?.trim().orEmpty()
+        if (text.isEmpty() || text.length > MAX_LINK_LENGTH) return null
+        if (text.any { it.isWhitespace() }) return null
+        val url = when (val decision = checkNavigation(text)) {
+            Decision.Allow -> text
+            is Decision.Upgrade -> decision.url
+            Decision.Block -> return null
+        }
+        // Host check without java.net.URI, which rejects many valid page addresses (for example "|").
+        val authority = url.substring(8).takeWhile { it != '/' && it != '?' && it != '#' }
+        val host = authority.substringAfterLast('@').substringBefore(':')
+        if (host.isBlank() || isNewTabAddress(url)) return null
+        return url
+    }
 
     /** Decides whether the WebView may follow a link / redirect. */
     fun checkNavigation(url: String): Decision {
