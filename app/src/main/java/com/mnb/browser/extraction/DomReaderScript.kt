@@ -14,7 +14,7 @@ internal object DomReaderScript {
 (function (arg) {
   'use strict';
   var MAX_PARAGRAPHS = 400, MAX_LENGTH = 12000, MAX_TOTAL = 180000;
-  var MAX_NODES = 6000, MAX_MUTATIONS = 200, LIFETIME_MS = 120000;
+  var MAX_NODES = 6000, MAX_MUTATIONS = 200, LIFETIME_MS = 120000, MAX_REGISTRY = 800;
   var key = Symbol.for('mnb.dom.reader.registry.v3');
   function answer(value) { return value; }
   function hash(text) {
@@ -31,22 +31,41 @@ internal object DomReaderScript {
     try { return record.ref && typeof record.ref.deref === 'function' ? record.ref.deref() : record.ref; }
     catch (_) { return null; }
   }
-  function validState(state) {
-    return !!state && state.sessionToken === arg.sessionToken && state.documentToken === arg.documentToken &&
-      state.tabId === arg.tabId && Number(state.navGeneration) === Number(arg.navGeneration) &&
-      !state.expired && Date.now() - state.createdAt <= LIFETIME_MS;
+  function sameDocument(state) {
+    return !!state && state.documentToken === arg.documentToken &&
+      state.tabId === arg.tabId && Number(state.navGeneration) === Number(arg.navGeneration);
+  }
+  // Registry validity = document identity only. Observer lifetime and extraction token never decide it.
+  function validState(state) { return sameDocument(state); }
+  function stopObserver(state) {
+    if (!state) return;
+    if (state.observer) { try { state.observer.disconnect(); } catch (_) {} state.observer = null; }
+    if (state.expiryTimer) { try { clearTimeout(state.expiryTimer); } catch (_) {} state.expiryTimer = null; }
+  }
+  function expireObserver(state) { stopObserver(state); state.observerExpired = true; }
+  function disposeState(state) {
+    if (!state) return;
+    stopObserver(state);
+    if (state.pageHideHandler) { try { window.removeEventListener('pagehide', state.pageHideHandler); } catch (_) {} state.pageHideHandler = null; }
+    try { state.records.clear(); } catch (_) {}
+    try { if (document[key] === state) delete document[key]; } catch (_) {}
   }
   function stateForExtraction() {
     var state = safeState();
-    if (!validState(state)) {
-      if (state && state.observer) { try { state.observer.disconnect(); } catch (_) {} }
-      if (state && state.expiryTimer) { try { clearTimeout(state.expiryTimer); } catch (_) {} }
-      state = { sessionToken: arg.sessionToken, documentToken: arg.documentToken, tabId: arg.tabId,
-        navGeneration: arg.navGeneration, createdAt: Date.now(), expiryTimer: null,
-        nextIndex: 0, records: new Map(), observer: null, mutations: 0, dirty: false, expired: false };
+    if (!sameDocument(state)) {
+      disposeState(state);
+      state = { documentToken: arg.documentToken, tabId: arg.tabId, navGeneration: arg.navGeneration,
+        operationToken: arg.sessionToken, createdAt: Date.now(), observerStartedAt: Date.now(),
+        expiryTimer: null, nextIndex: 0, records: new Map(), observer: null, mutations: 0,
+        dirty: false, observerExpired: false, pageHideHandler: null };
       try { Object.defineProperty(document, key, { value: state, writable: true, configurable: true, enumerable: false }); }
       catch (_) { return null; }
+      try {
+        state.pageHideHandler = function (event) { if (event && event.persisted) return; disposeState(state); };
+        window.addEventListener('pagehide', state.pageHideHandler);
+      } catch (_) {}
     }
+    state.operationToken = arg.sessionToken;
     return state;
   }
   function hidden(el) {
@@ -168,29 +187,17 @@ internal object DomReaderScript {
     return { items: out, truncated: limited, totalChars: total, nodeCount: list.length };
   }
   function installObserver(state, root) {
-    if (state.observer) { try { state.observer.disconnect(); } catch (_) {} state.observer = null; }
-    if (state.expiryTimer) { try { clearTimeout(state.expiryTimer); } catch (_) {} state.expiryTimer = null; }
-    if (state.mutations >= MAX_MUTATIONS || Date.now() - state.createdAt >= LIFETIME_MS) { state.expired = true; return; }
+    stopObserver(state);
+    state.observerStartedAt = Date.now(); state.mutations = 0; state.observerExpired = false;
     if (typeof MutationObserver !== 'function') return;
     try {
       state.observer = new MutationObserver(function (changes) {
-        if (!validState(state) || Date.now() - state.createdAt > LIFETIME_MS || state.mutations >= MAX_MUTATIONS) {
-          state.expired = true; try { state.observer.disconnect(); } catch (_) {} state.observer = null;
-          if (state.expiryTimer) { try { clearTimeout(state.expiryTimer); } catch (_) {} state.expiryTimer = null; }
-          return;
-        }
+        if (Date.now() - state.observerStartedAt > LIFETIME_MS || state.mutations >= MAX_MUTATIONS) { expireObserver(state); return; }
         state.mutations += changes.length || 1; state.dirty = true;
-        if (state.mutations >= MAX_MUTATIONS) {
-          try { state.observer.disconnect(); } catch (_) {} state.observer = null;
-          if (state.expiryTimer) { try { clearTimeout(state.expiryTimer); } catch (_) {} state.expiryTimer = null; }
-        }
+        if (state.mutations >= MAX_MUTATIONS) expireObserver(state);
       });
       state.observer.observe(root, { childList: true, subtree: true, characterData: true });
-      state.expiryTimer = setTimeout(function () {
-        if (state.observer && Date.now() - state.createdAt >= LIFETIME_MS) {
-          try { state.observer.disconnect(); } catch (_) {} state.observer = null; state.expired = true; state.expiryTimer = null;
-        }
-      }, LIFETIME_MS + 20);
+      state.expiryTimer = setTimeout(function () { expireObserver(state); }, LIFETIME_MS + 20);
     } catch (_) { state.observer = null; }
   }
   function extract() {
@@ -203,6 +210,15 @@ internal object DomReaderScript {
       var out = [], nextRecords = new Map(), total = 0;
       for (var i = 0; i < scanned.items.length; i++) {
         var item = scanned.items[i], found = null;
+        for (var tj = 0; tj < oldRecords.length; tj++) {
+          var tr = oldRecords[tj];
+          if (unused.has(tr.index) && tr.state === 'Translated' && getNode(tr) === item.node &&
+              String(item.node.textContent || '') === tr.translatedText) {
+            found = tr;
+            item = { node: item.node, text: tr.text, hash: tr.hash, headingLevel: tr.headingLevel, contentKind: tr.contentKind };
+            break;
+          }
+        }
         for (var j = 0; j < oldRecords.length; j++) {
           var old = oldRecords[j];
           if (unused.has(old.index) && getNode(old) === item.node && old.hash === item.hash) { found = old; break; }
@@ -225,9 +241,13 @@ internal object DomReaderScript {
           headingLevel: item.headingLevel, contentKind: item.contentKind });
         total += item.text.length;
       }
-      // Preserve old anchors for stable indices but do not let the bounded registry grow indefinitely.
-      for (var rr = 0; rr < oldRecords.length && nextRecords.size < MAX_PARAGRAPHS; rr++) {
-        if (unused.has(oldRecords[rr].index) && getNode(oldRecords[rr])) nextRecords.set(oldRecords[rr].index, oldRecords[rr]);
+      // Keep translated anchors (needed for restore) even if absent from this scan; registry stays bounded.
+      for (var rr = 0; rr < oldRecords.length && nextRecords.size < MAX_REGISTRY; rr++) {
+        var kept = oldRecords[rr];
+        if (!unused.has(kept.index)) continue;
+        var keptNode = getNode(kept);
+        if (!keptNode || !keptNode.isConnected) continue;
+        if (kept.state === 'Translated' || nextRecords.size < MAX_PARAGRAPHS) nextRecords.set(kept.index, kept);
       }
       state.records = nextRecords; state.dirty = false;
       installObserver(state, root);
@@ -257,12 +277,10 @@ internal object DomReaderScript {
     var s = safeState();
     return validState(s) ? s : null;
   }
-  function stateFailure() {
-    var s = safeState();
-    if (!s || s.documentToken !== arg.documentToken || s.tabId !== arg.tabId || Number(s.navGeneration) !== Number(arg.navGeneration)) return 'wrong_document';
-    if (s.sessionToken !== arg.sessionToken) return 'stale_session';
-    if (s.expired || Date.now() - s.createdAt > LIFETIME_MS) return 'stale_session';
-    return null;
+  function stateFailure() { return sameDocument(safeState()) ? null : 'wrong_document'; }
+  function replaceFailure() {
+    var f = stateFailure(); if (f) return f;
+    return safeState().operationToken === arg.sessionToken ? null : 'stale_session';
   }
   function resolve(record) {
     if (!record) return { status: 'index_not_found' };
@@ -271,7 +289,7 @@ internal object DomReaderScript {
     return { status: 'resolved', node: node };
   }
   function apply() {
-    var failure = stateFailure(); if (failure) return answer({ status: failure });
+    var failure = replaceFailure(); if (failure) return answer({ status: failure });
     var state = withState();
     var results = [], list = Array.isArray(arg.paragraphs) ? arg.paragraphs : [];
     var scrollX = window.scrollX, scrollY = window.scrollY;
@@ -320,8 +338,7 @@ internal object DomReaderScript {
   function cleanup() {
     var failure = stateFailure(); if (failure) return answer({ status: failure });
     var state = withState();
-    if (state.observer) { try { state.observer.disconnect(); } catch (_) {} state.observer = null; }
-    if (state.expiryTimer) { try { clearTimeout(state.expiryTimer); } catch (_) {} state.expiryTimer = null; }
+    stopObserver(state);
     return answer({ status: 'cleaned', mutationCount: state.mutations });
   }
   try {
@@ -329,8 +346,14 @@ internal object DomReaderScript {
     if (arg.op === 'replace') return apply();
     if (arg.op === 'restore') return restore();
     if (arg.op === 'cleanup') return cleanup();
+    if (arg.op === 'status') {
+      var sf = stateFailure(); if (sf) return answer({ status: sf });
+      var ss = safeState();
+      return answer({ status: 'ok', observerActive: !!ss.observer, observerExpired: !!ss.observerExpired,
+        records: ss.records.size, mutationCount: ss.mutations });
+    }
     if (arg.op === 'resolve') {
-      var failure = stateFailure(); if (failure) return answer({ status: failure });
+      var failure = replaceFailure(); if (failure) return answer({ status: failure });
       var s = withState();
       var rec = s.records.get(Number(arg.index));
       if (!rec) return answer({ status: 'index_not_found' });

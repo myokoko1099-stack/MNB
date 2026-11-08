@@ -202,6 +202,111 @@ await test('paragraph and total-output resource limits report truncation', async
   await page.close();
 });
 
+
+const ORIG_A = 'Original paragraph A has enough readable text to be extracted.';
+const ORIG_B = 'Original paragraph B also has enough readable text to be extracted.';
+const ARTICLE = `<!doctype html><body><main><article><p id="a">${ORIG_A}</p><p id="b">${ORIG_B}</p></article></main></body>`;
+const tr1 = (r, text = 'translated A') => ({ op: 'replace', paragraphs: [{ index: r.paragraphs[0].index, textHash: r.paragraphs[0].textHash, translatedText: text }] });
+
+await test('regression 1: observer lifetime expires, original restore still works', async () => {
+  const page = await browser.newPage();
+  await page.clock.install();
+  await page.setContent(ARTICLE);
+  const r = await evaluate(page);
+  assert.equal((await evaluate(page, tr1(r))).results[0].status, 'translated');
+  await page.clock.fastForward(121000);
+  const st = await evaluate(page, { op: 'status' });
+  assert.equal(st.observerActive, false); assert.equal(st.observerExpired, true);
+  const out = await evaluate(page, { op: 'restore' });
+  assert.equal(out.results.find(x => x.index === r.paragraphs[0].index).status, 'restored');
+  assert.equal(await page.locator('#a').textContent(), ORIG_A);
+  await page.close();
+});
+
+await test('regression 2+4: translate, extract again, original and registry are kept', async () => {
+  const page = await fresh(ARTICLE);
+  const first = await evaluate(page, { sessionToken: 'op-1' });
+  await evaluate(page, { sessionToken: 'op-1', ...tr1(first) });
+  const second = await evaluate(page, { sessionToken: 'op-2' });
+  const view = r => r.paragraphs.map(p => [p.index, p.textHash, p.originalText]);
+  assert.deepEqual(view(second), view(first));
+  assert.equal((await evaluate(page, { op: 'status', sessionToken: 'op-2' })).records, first.paragraphs.length);
+  const out = await evaluate(page, { op: 'restore', sessionToken: 'op-2' });
+  assert.ok(out.results.every(x => x.status === 'restored'));
+  assert.equal(await page.locator('#a').textContent(), ORIG_A);
+  await page.close();
+});
+
+await test('regression 3: reader close, reopen, extract, restore', async () => {
+  const page = await fresh(ARTICLE);
+  const first = await evaluate(page, { sessionToken: 'reader-1' });
+  await evaluate(page, { sessionToken: 'reader-1', ...tr1(first) });
+  assert.equal((await evaluate(page, { op: 'cleanup', sessionToken: 'reader-1' })).status, 'cleaned');
+  const reopened = await evaluate(page, { sessionToken: 'reader-2' });
+  assert.equal(reopened.paragraphs[0].originalText, ORIG_A);
+  assert.equal((await evaluate(page, { op: 'restore', sessionToken: 'reader-2' })).status, 'complete');
+  assert.equal(await page.locator('#a').textContent(), ORIG_A);
+  await page.close();
+});
+
+await test('regression 5: navigation change rejects the old document restore', async () => {
+  const page = await fresh(ARTICLE);
+  const r = await evaluate(page);
+  await evaluate(page, tr1(r));
+  assert.equal((await evaluate(page, { op: 'restore', navGeneration: 13 })).status, 'wrong_document');
+  assert.equal(await page.locator('#a').textContent(), 'translated A');
+  assert.equal((await evaluate(page, { op: 'restore' })).status, 'complete');
+  await page.close();
+});
+
+await test('regression 6: tabs keep separate registries', async () => {
+  const a = await fresh(ARTICLE), b = await fresh(ARTICLE);
+  const ia = { tabId: 'tab-a' }, ib = { tabId: 'tab-b', documentToken: 'document-b' };
+  const ra = await evaluate(a, ia), rb = await evaluate(b, ib);
+  await evaluate(a, { ...ia, ...tr1(ra) }); await evaluate(b, { ...ib, ...tr1(rb) });
+  assert.equal((await evaluate(b, { op: 'restore', tabId: 'tab-a' })).status, 'wrong_document');
+  assert.equal(await b.locator('#a').textContent(), 'translated A');
+  assert.equal((await evaluate(a, { op: 'restore', ...ia })).status, 'complete');
+  assert.equal(await a.locator('#a').textContent(), ORIG_A);
+  assert.equal(await b.locator('#a').textContent(), 'translated A');
+  assert.equal((await evaluate(b, { op: 'restore', ...ib })).status, 'complete');
+  await a.close(); await b.close();
+});
+
+await test('regression 7: after observer cleanup, replace and restore stay valid', async () => {
+  const page = await fresh(ARTICLE);
+  const r = await evaluate(page);
+  assert.equal((await evaluate(page, { op: 'cleanup' })).status, 'cleaned');
+  assert.equal((await evaluate(page, tr1(r))).results[0].status, 'translated');
+  assert.equal((await evaluate(page, { op: 'restore' })).status, 'complete');
+  assert.equal(await page.locator('#a').textContent(), ORIG_A);
+  await page.close();
+});
+
+await test('regression 8: real document close clears registry (bfcache keeps it)', async () => {
+  const page = await fresh(ARTICLE);
+  const r = await evaluate(page);
+  await evaluate(page, tr1(r));
+  await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true })));
+  assert.equal((await evaluate(page, { op: 'status' })).status, 'ok');
+  await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: false })));
+  assert.equal((await evaluate(page, { op: 'status' })).status, 'wrong_document');
+  assert.equal((await evaluate(page, { op: 'restore' })).status, 'wrong_document');
+  await page.close();
+});
+
+await test('mutation limit expires observer only; restore still works', async () => {
+  const page = await fresh(ARTICLE);
+  const r = await evaluate(page);
+  await evaluate(page, tr1(r));
+  await page.evaluate(() => { const art = document.querySelector('article'); for (let i = 0; i < 250; i++) art.appendChild(document.createElement('span')); });
+  await page.waitForTimeout(50);
+  assert.equal((await evaluate(page, { op: 'status' })).observerExpired, true);
+  assert.equal((await evaluate(page, { op: 'restore' })).status, 'complete');
+  assert.equal(await page.locator('#a').textContent(), ORIG_A);
+  await page.close();
+});
+
 await browser.close();
 for (const [status, name] of passed) console.log(`${status} ${name}`);
 const failed = passed.filter(([status]) => status === 'FAIL').length;
