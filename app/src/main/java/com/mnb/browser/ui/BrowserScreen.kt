@@ -44,6 +44,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.mnb.browser.extraction.ExtractionController
+import com.mnb.browser.extraction.ExtractedContent
+import com.mnb.browser.extraction.ExtractedParagraph
 import com.mnb.browser.extraction.ExtractionState
 import com.mnb.browser.extraction.ExtractionStateManager
 import com.mnb.browser.library.BrowserLibrary
@@ -53,6 +55,7 @@ import com.mnb.browser.navigation.UrlPolicy
 import com.mnb.browser.reader.ReaderPositionRepository
 import com.mnb.browser.reader.ReaderSettingsRepository
 import com.mnb.browser.reader.ReaderStateManager
+import com.mnb.browser.reader.translation.LocalReaderTranslationActions
 import com.mnb.browser.state.BrowserError
 import com.mnb.browser.state.BrowserStateManager
 import com.mnb.browser.tabs.TabManager
@@ -84,6 +87,7 @@ fun BrowserScreen(
     val state = stateManager.state
     val extractionUi = extractionState.state
     val readerContent = readerState.content
+    val readerTranslationActions = LocalReaderTranslationActions.current
     val focus = LocalFocusManager.current
     val addressFocusRequester = remember { FocusRequester() }
 
@@ -141,6 +145,35 @@ fun BrowserScreen(
         navigation.submit(raw)
     }
 
+    fun replaceOnPage(content: ExtractedContent, translations: List<Pair<ExtractedParagraph, String>>) {
+        val tabId = webController.activeTabId() ?: return
+        val session = webController.currentPageSession(tabId) ?: return
+        if (session.documentToken == content.documentToken) {
+            webController.replaceInPage(session, content, translations) { }
+        }
+    }
+
+    fun restoreOnPage(content: ExtractedContent) {
+        val tabId = webController.activeTabId() ?: return
+        val session = webController.currentPageSession(tabId) ?: return
+        if (session.documentToken == content.documentToken) {
+            webController.restoreInPage(session, content) { }
+        }
+    }
+
+    fun closeReader() {
+        val content = readerState.content
+        val tabId = webController.activeTabId()
+        val session = tabId?.let { webController.currentPageSession(it) }
+        if (content != null && tabId != null && session != null && session.documentToken == content.documentToken) {
+            webController.cleanupDomObserver(session, content)
+            webController.readerModeController.cancel(tabId)?.let { token ->
+                webController.readerModeController.finishCancellation(tabId, token)
+            }
+        }
+        readerState.close()
+    }
+
     BackHandler(enabled = state.canGoBack && !overlayOpen) { navigation.back() }
     BackHandler(enabled = switcherOpen) { switcherOpen = false }
     BackHandler(enabled = bookmarksOpen) { bookmarksOpen = false }
@@ -151,7 +184,7 @@ fun BrowserScreen(
     }
     BackHandler(enabled = settingsOpen) { settingsOpen = false }
     BackHandler(enabled = extractionOpen) { extraction.close() }
-    BackHandler(enabled = readerOpen) { readerState.close() }
+    BackHandler(enabled = readerOpen) { closeReader() }
 
     // Focus is requested by AddressBarOverlay itself, once its text field exists. Requesting it
     // from here could run while the overlay is hidden (e.g. the reader is open) and would crash.
@@ -237,6 +270,11 @@ fun BrowserScreen(
                     onClose = { extraction.close() },
                     onRetry = { extraction.extract() },
                     onRead = { readerState.open(it) },
+                    onTranslateInPage = { content ->
+                        readerState.open(content)
+                        readerTranslationActions?.requestTranslation(content)
+                    },
+                    onRestoreInPage = ::restoreOnPage,
                 )
             }
 
@@ -245,8 +283,10 @@ fun BrowserScreen(
                     content = readerContent,
                     positions = readerPositions,
                     settingsRepository = readerSettings,
-                    onClose = { readerState.close() },
+                    onClose = ::closeReader,
                     translation = readerState.translation?.current,
+                    onApplyToPage = ::replaceOnPage,
+                    onRestorePage = ::restoreOnPage,
                 )
             }
 
