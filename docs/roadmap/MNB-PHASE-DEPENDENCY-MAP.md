@@ -1,6 +1,6 @@
 # MNB — Phase Dependency Map & Implementation Order
 
-အခြေခံ: MNB-COMPLETE-PROJECT-ROADMAP (R-00…R-16)။ မူလ Phase (Phase 02, 04-I*, 06-*, 2A–2G) နှင့် Lineage ကို Roadmap Part A တွင်ကြည့်ပါ။
+အခြေခံ: MNB-COMPLETE-PROJECT-ROADMAP (R-00…R-17; R-17 = Google Play, v1.0 ပြင်ပ)။ မူလ Phase (Phase 02, 04-I*, 06-*, 2A–2G) နှင့် Lineage ကို Roadmap Part A တွင်ကြည့်ပါ။
 
 ## 1. ရှိပြီးသား (Baseline) မှ R-Phase သို့ ချိတ်ဆက်မှု
 

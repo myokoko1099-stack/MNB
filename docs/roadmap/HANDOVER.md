@@ -1,7 +1,7 @@
 # HANDOVER — MNB Complete Roadmap Reconstruction (Audit + Planning)
 
 ရက်စွဲ: 2026-11-08 · `main` @ `c67a45e` (Merge PR #36)
-**ဤ HANDOVER သည် Repo ရှိ Root `HANDOVER.md` (Phase 2G, Stale) ကို အစားထိုးရန် ရေးထားသည်။** Repo တွင် မ commit ရသေးပါ — ZIP ထဲသာ။
+**ဤ HANDOVER သည် Repo ရှိ Root `HANDOVER.md` (Phase 2G, Stale) ကို အစားထိုးရန် ရေးထားသည်။** Docs အားလုံးကို User က Branch `r-00-roadmap-docs` (commit `43795ff`) ဖြင့် `docs/roadmap/` သို့ push ပြီးဖြစ်သည်။ Root `HANDOVER.md` (Stale) ကို အစားထိုးခြင်းကိုမူ မလုပ်ရသေးပါ (Roadmap UD-17 နှင့်ဆက်စပ်၊ User ခွင့်ပြုမှ)။
 
 ## 0. ID စနစ် (မရောရန်)
 | Prefix | အဓိပ္ပာယ် |
@@ -27,7 +27,7 @@
 6. **Schema JSON မ commit** (`app/schemas` မတွေ့) → `MnbSchemaMigrationTest` skip ဖြစ်နေနိုင် [I]။
 7. **Security Baseline ကောင်း:** `addJavascriptInterface` မသုံး၊ File/Content access off၊ SSL cancel၊ HTTPS-only၊ Key header-only/AES-GCM။ (အားလုံး Device/Real-Keystore မစမ်းရသေး)။
 
-## 3. Roadmap အဓိကအချက်များ (R-00 … R-16)
+## 3. Roadmap အဓိကအချက်များ (R-00 … R-17; R-17 = Google Play၊ v1.0 ပြင်ပ)
 Part A တွင် မူလ Phase History ကို မူလအမည်ဖြင့်ထား၊ Replaced-Purpose Ledger ပါ။ Part C တွင် Final Roadmap:
 | R | အမည် | Lineage |
 |---|---|---|

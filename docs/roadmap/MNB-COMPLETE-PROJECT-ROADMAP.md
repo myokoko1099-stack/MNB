@@ -45,7 +45,7 @@ Evidence Tag: **[C]** Code ဖတ်ပြီး · **[D]** Doc သာ · **[CI]
 
 ## A.3 နံပါတ်စနစ် ရောထွေးမှု ဖြေရှင်းချက် (TD-01)
 - မူလ Label များ (`Phase 02`, `2A–2G`, `04-I*`, `06-*`, `UI Phase 1`) ကို **မပြောင်း**။
-- Roadmap အသစ်တွင် `R-00 … R-16` ကို သုံးသည် (R = Roadmap)။ ရှေ့မှာ "Phase" မထည့် — မူလ Phase နံပါတ်နှင့် မရောရန်။
+- Roadmap အသစ်တွင် `R-00 … R-17` ကို သုံးသည် (R-17 = Google Play၊ v1.0 ပြင်ပ သီးခြား Milestone) (R = Roadmap)။ ရှေ့မှာ "Phase" မထည့် — မူလ Phase နံပါတ်နှင့် မရောရန်။
 - `06-C2…06-C4` (06-C1 မှ လက်ဆင့်ကမ်း) ကို R-01 က **ထိန်းသိမ်းသုံး** (Lineage ပြ)။
 - Branch အမည်တွင် `r-xx-` ဖြင့်စပြီး Phase အမည်တူ Branch ပြန်မသုံးရန် (PR #35/#36 ပြဿနာမထပ်ရန်)။
 
@@ -63,7 +63,7 @@ SB-1 `addJavascriptInterface` မသုံး · SB-2 File/Content access off ·
 
 ---
 
-# PART C — Final Roadmap (R-00 … R-16)
+# PART C — Final Roadmap (R-00 … R-17; v1.0 Critical path = R-00 … R-16၊ R-17 = Post-v1.0 Google Play Milestone)
 
 Phase တိုင်း Format: Number · Name · Objective · Current Status · Existing Implementation · Missing Features · Scope · Tasks · Dependencies · Files/Modules · Security · Testing · Acceptance · Completion · Risks · Expected Final Result။
 **Completion Criteria အမြဲ ၄ ချက်:** (1) Acceptance အားလုံး ✔ (2) CI အစိမ်း (exact commit) (3) Phase အလိုက် Device Test မှတ်တမ်း (4) Docs/ဖိုင်ကိစ္စ ပြန်ညှိ။ Code ရေးပြီးရုံ = Completed မဟုတ်။
