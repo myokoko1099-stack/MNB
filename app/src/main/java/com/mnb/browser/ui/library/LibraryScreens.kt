@@ -13,7 +13,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Warning
@@ -24,6 +26,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -38,6 +41,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.mnb.browser.library.HistoryGrouping
+import com.mnb.browser.library.HistoryText
 import com.mnb.browser.library.LibraryEntry
 import com.mnb.browser.library.LibraryText
 import com.mnb.browser.library.LoadState
@@ -78,6 +83,8 @@ fun HistoryScreen(
     onOpen: (url: String) -> Unit,
     onDelete: (id: Long) -> Unit,
     onClearAll: () -> Unit,
+    query: String,
+    onQueryChange: (String) -> Unit,
     onRetry: () -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
@@ -93,18 +100,19 @@ fun HistoryScreen(
             }
         },
     ) {
-        LibraryContent(
-            entries = entries,
-            state = state,
-            emptyIcon = Icons.Default.DateRange,
-            emptyTitle = LibraryText.HISTORY_EMPTY_TITLE,
-            emptyBody = LibraryText.HISTORY_EMPTY_BODY,
-            showTime = true,
-            deleteDescription = LibraryText.HISTORY_DELETE,
-            onOpen = onOpen,
-            onDelete = onDelete,
-            onRetry = onRetry,
-        )
+        Column(Modifier.fillMaxSize()) {
+            HistorySearchField(query = query, onQueryChange = onQueryChange)
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                HistoryContent(
+                    entries = entries,
+                    state = state,
+                    query = query,
+                    onOpen = onOpen,
+                    onDelete = onDelete,
+                    onRetry = onRetry,
+                )
+            }
+        }
     }
     if (confirmClear) {
         AlertDialog(
@@ -143,6 +151,99 @@ private fun LibraryScaffold(
                 TextButton(onClick = onClose) { Text(LibraryText.DONE) }
             }
             Box(Modifier.weight(1f).fillMaxWidth()) { content() }
+        }
+    }
+}
+
+/** Search box of the History screen. */
+@Composable
+private fun HistorySearchField(query: String, onQueryChange: (String) -> Unit) {
+    OutlinedTextField(
+        value = query,
+        onValueChange = { onQueryChange(it.take(HistoryText.MAX_QUERY_LENGTH)) },
+        singleLine = true,
+        placeholder = { Text(HistoryText.SEARCH_HINT) },
+        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+        trailingIcon = {
+            if (query.isNotEmpty()) {
+                IconButton(onClick = { onQueryChange("") }) {
+                    Icon(Icons.Default.Close, contentDescription = HistoryText.SEARCH_CLEAR)
+                }
+            }
+        },
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
+    )
+}
+
+/** History list: the states of [LibraryContent], with the visits grouped by date (also while searching). */
+@Composable
+private fun HistoryContent(
+    entries: List<LibraryEntry>,
+    state: LoadState,
+    query: String,
+    onOpen: (String) -> Unit,
+    onDelete: (Long) -> Unit,
+    onRetry: () -> Unit,
+) {
+    Crossfade(targetState = state, modifier = Modifier.fillMaxSize(), label = "historyState") { shown ->
+        when (shown) {
+            LoadState.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
+            }
+            LoadState.Error -> CenteredMessage(
+                icon = Icons.Default.Warning,
+                title = LibraryText.LOAD_ERROR_TITLE,
+                body = LibraryText.LOAD_ERROR_BODY,
+                isError = true,
+            ) {
+                Button(onClick = onRetry) { Text(LibraryText.RETRY) }
+            }
+            LoadState.Ready -> if (entries.isEmpty()) {
+                if (query.isBlank()) {
+                    CenteredMessage(
+                        icon = Icons.Default.DateRange,
+                        title = LibraryText.HISTORY_EMPTY_TITLE,
+                        body = LibraryText.HISTORY_EMPTY_BODY,
+                        isError = false,
+                    )
+                } else {
+                    CenteredMessage(
+                        icon = Icons.Default.Search,
+                        title = HistoryText.SEARCH_EMPTY_TITLE,
+                        body = HistoryText.SEARCH_EMPTY_BODY,
+                        isError = false,
+                    )
+                }
+            } else {
+                // Taken once per list so the groups and "5 min ago" do not flicker while scrolling.
+                val now = remember(entries) { System.currentTimeMillis() }
+                val sections = remember(entries, now) { HistoryGrouping.group(entries, now) }
+                LazyColumn(Modifier.fillMaxSize()) {
+                    for (section in sections) {
+                        item(key = "header-${section.group.name}") {
+                            Text(
+                                section.group.label,
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 4.dp),
+                            )
+                        }
+                        items(section.entries, key = { "entry-${it.id}" }) { entry ->
+                            EntryRow(
+                                entry = entry,
+                                timeText = LibraryText.timeAgo(now, entry.timeMillis),
+                                deleteDescription = LibraryText.HISTORY_DELETE,
+                                onOpen = { onOpen(entry.url) },
+                                onDelete = { onDelete(entry.id) },
+                            )
+                            HorizontalDivider(
+                                modifier = Modifier.padding(horizontal = 20.dp),
+                                color = MaterialTheme.colorScheme.outlineVariant,
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 }

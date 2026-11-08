@@ -22,7 +22,7 @@ class TabManager(
     private val mainPoster: (Runnable) -> Unit,
     private val clock: () -> Long = { System.currentTimeMillis() },
     private val newId: () -> String = { UUID.randomUUID().toString() },
-    private val homeUrl: String = UrlPolicy.HOME_URL,
+    private val homeUrl: String = UrlPolicy.NEW_TAB_URL,
     val maxTabs: Int = MAX_TABS,
 ) {
     var tabs by mutableStateOf<List<TabInfo>>(emptyList())
@@ -68,18 +68,30 @@ class TabManager(
 
     private fun applyRestored(stored: StoredTabs) {
         if (isRestored) return
+        // Tabs that earlier versions left on the old home page become fresh new-tab pages. They get a new
+        // id so that their saved WebView state (the old home page) is not restored.
+        val replacedIds = HashMap<String, String>()
         val cleaned = stored.tabs
             .filter { it.id.isNotBlank() && it.url.isNotBlank() }
             .distinctBy { it.id }
             .take(maxTabs)
-            .map { it.copy(url = safeUrl(it.url)) }
+            .map { tab ->
+                if (UrlPolicy.isLegacyHomeUrl(tab.url)) {
+                    val freshId = newId()
+                    replacedIds[tab.id] = freshId
+                    tab.copy(id = freshId, url = homeUrl, title = "")
+                } else {
+                    tab.copy(url = safeUrl(tab.url))
+                }
+            }
         if (cleaned.isEmpty()) {
             val home = createHomeTab()
             tabs = listOf(home)
             activeTabId = home.id
         } else {
             tabs = cleaned
-            activeTabId = stored.activeTabId?.takeIf { id -> cleaned.any { it.id == id } }
+            val wantedActive = stored.activeTabId?.let { replacedIds[it] ?: it }
+            activeTabId = wantedActive?.takeIf { id -> cleaned.any { it.id == id } }
                 ?: cleaned.maxBy { it.lastAccessedAtMillis }.id
         }
         isRestored = true

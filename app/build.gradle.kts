@@ -28,6 +28,8 @@ android {
     kotlinOptions { jvmTarget = "17" }
     buildFeatures { compose = true }
     testOptions { unitTests.isIncludeAndroidResources = true }
+    // Phase 2G: the committed Room schema JSON files are test assets for MigrationTestHelper.
+    sourceSets["test"].assets.srcDir("$projectDir/schemas")
     composeOptions { kotlinCompilerExtensionVersion = "1.5.14" }
     packaging { resources.excludes += "/META-INF/{AL2.0,LGPL2.1}" }
 }
@@ -50,8 +52,19 @@ dependencies {
     // JVM implementation of org.json (the Android one is only a stub in unit tests)
     testImplementation("org.json:json:20231013")
     testImplementation("androidx.work:work-testing:2.9.0")
+    // Phase 2G: MigrationTestHelper (schema based migration test, runs under Robolectric)
+    testImplementation("androidx.room:room-testing:2.6.1")
+    testImplementation("androidx.test:core:1.5.0")
 }
 
 ksp {
     arg("room.schemaLocation", "$projectDir/schemas")
+}
+
+// Phase 2G: KSP writes the schema JSON into the same folder the unit tests read as assets, so the
+// asset merge must wait for it (otherwise Gradle reports a missing task dependency).
+tasks.configureEach {
+    if (name.startsWith("merge") && name.endsWith("UnitTestAssets")) {
+        mustRunAfter(tasks.matching { it.name.startsWith("ksp") })
+    }
 }

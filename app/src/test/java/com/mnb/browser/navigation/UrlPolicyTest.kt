@@ -79,8 +79,11 @@ class UrlPolicyTest {
         assertEquals(UrlPolicy.Decision.Upgrade("https://a.com/x"), UrlPolicy.checkNavigation("http://a.com/x"))
     }
 
-    @Test fun homeUrlIsUnchangedBecauseTabsRecogniseNewTabsByIt() =
-        assertEquals("https://duckduckgo.com/", UrlPolicy.HOME_URL)
+    @Test fun homeUrlIsGoogleAndNewTabsHaveTheirOwnAddress() {
+        assertEquals("https://www.google.com/", UrlPolicy.HOME_URL)
+        assertFalse(UrlPolicy.isNewTabAddress(UrlPolicy.HOME_URL))
+        assertTrue(UrlPolicy.isNewTabAddress(UrlPolicy.NEW_TAB_URL))
+    }
 
     @Test fun dangerousSchemesBlocked() {
         listOf("javascript:alert(1)", "file:///sdcard/x", "data:text/html,hi", "intent://x", "ftp://a.com", "mailto:a@b.c")

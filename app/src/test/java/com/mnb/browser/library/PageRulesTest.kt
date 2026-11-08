@@ -39,11 +39,13 @@ class PageRulesTest {
     }
 
     @Test fun newTabPageIsNotRecordable() {
-        assertFalse(PageRules.isRecordable(UrlPolicy.HOME_URL))
-        assertFalse(PageRules.isRecordable(UrlPolicy.HOME_URL.trimEnd('/')))
-        assertFalse(PageRules.isRecordable(UrlPolicy.HOME_URL.uppercase()))
-        // A search on the same site is a real page.
-        assertTrue(PageRules.isRecordable(UrlPolicy.HOME_URL + "?q=kotlin"))
+        assertFalse(PageRules.isRecordable(UrlPolicy.NEW_TAB_URL))
+        assertFalse(PageRules.isRecordable(UrlPolicy.NEW_TAB_URL + "/"))
+        assertFalse(PageRules.isRecordable(UrlPolicy.NEW_TAB_URL.uppercase()))
+        // The same address with a query is not the new-tab page.
+        assertTrue(PageRules.isRecordable(UrlPolicy.NEW_TAB_URL + "?q=kotlin"))
+        // Google itself is a real website, not the new-tab page.
+        assertTrue(PageRules.isRecordable(UrlPolicy.HOME_URL))
     }
 
     @Test fun veryLongAddressIsNotRecordable() {
@@ -54,7 +56,9 @@ class PageRulesTest {
     @Test fun isNewTabRecognisesBlankAndHome() {
         assertTrue(PageRules.isNewTab(null))
         assertTrue(PageRules.isNewTab(""))
-        assertTrue(PageRules.isNewTab(UrlPolicy.HOME_URL))
+        assertTrue(PageRules.isNewTab(UrlPolicy.NEW_TAB_URL))
+        assertTrue(PageRules.isNewTab("about:blank"))
+        assertFalse(PageRules.isNewTab(UrlPolicy.HOME_URL))
         assertFalse(PageRules.isNewTab("https://example.com/"))
     }
 }

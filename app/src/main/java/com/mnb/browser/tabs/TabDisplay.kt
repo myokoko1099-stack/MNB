@@ -8,8 +8,9 @@ object TabDisplay {
     const val NEW_TAB_LABEL = "New tab"
 
     fun label(tab: TabInfo): String = when {
+        // A tab on the new-tab page is always "New tab", even if it still remembers an old page title.
+        UrlPolicy.isNewTabAddress(tab.url) -> NEW_TAB_LABEL
         tab.title.isNotBlank() -> tab.title
-        tab.url.isBlank() || tab.url.trimEnd('/') == UrlPolicy.HOME_URL.trimEnd('/') -> NEW_TAB_LABEL
         else -> UrlUtils.simplifyForDisplay(tab.url)
     }
 

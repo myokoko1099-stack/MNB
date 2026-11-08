@@ -12,7 +12,7 @@ class TabDisplayTest {
     }
 
     @Test fun theHomePageWithoutATitleIsANewTab() {
-        assertEquals("New tab", TabDisplay.label(tab(UrlPolicy.HOME_URL)))
+        assertEquals("New tab", TabDisplay.label(tab(UrlPolicy.NEW_TAB_URL)))
     }
 
     @Test fun anAddressIsShownSimplifiedWhenThereIsNoTitle() {

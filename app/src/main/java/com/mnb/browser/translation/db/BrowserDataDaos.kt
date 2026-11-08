@@ -36,6 +36,23 @@ interface BrowserHistoryDao {
 
     @Query("DELETE FROM browser_history")
     fun clear(): Int
+
+    /** [pattern] is a LIKE pattern built by BrowserDataRepository.likePattern (backslash is the escape character). */
+    @Query(
+        "SELECT * FROM browser_history WHERE url LIKE :pattern ESCAPE '\\' OR title LIKE :pattern ESCAPE '\\' " +
+            "ORDER BY visitedAtMillis DESC, historyId DESC LIMIT :limit",
+    )
+    fun search(pattern: String, limit: Int): List<BrowserHistoryEntity>
+
+    @Query("DELETE FROM browser_history WHERE visitedAtMillis < :cutoffMillis")
+    fun deleteOlderThan(cutoffMillis: Long): Int
+
+    /** Deletes everything except the [keep] newest visits. */
+    @Query(
+        "DELETE FROM browser_history WHERE historyId NOT IN (" +
+            "SELECT historyId FROM browser_history ORDER BY visitedAtMillis DESC, historyId DESC LIMIT :keep)",
+    )
+    fun trimToNewest(keep: Int): Int
 }
 
 @Dao

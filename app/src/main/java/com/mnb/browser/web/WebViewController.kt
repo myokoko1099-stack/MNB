@@ -6,6 +6,8 @@ import android.graphics.Bitmap
 import android.net.http.SslError
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.os.Parcel
 import android.view.ViewGroup
 import android.webkit.ConsoleMessage
@@ -78,6 +80,12 @@ class WebViewController(
     var pageListener: ((tabId: String, url: String?, title: String?) -> Unit)? = null
 
     /**
+     * Phase 2G: called (main thread) when the user long-presses a link in the ACTIVE tab, with the raw
+     * link address from the page. The receiver must validate it (see UrlPolicy.linkTarget).
+     */
+    var linkLongPressListener: ((tabId: String, url: String) -> Unit)? = null
+
+    /**
      * Phase 2E: called once per finished page load of any tab, but only when the load had no
      * main-frame error (network, HTTP or SSL). May be called more than once for the same page
      * (redirects, repeated callbacks), so the receiver must de-duplicate. Main thread.
@@ -145,7 +153,10 @@ class WebViewController(
         for (id in LiveTabPolicy.tabsToUnload(liveIdsOldestFirst(), activeId, maxLive = 1)) unloadTab(id)
     }
 
-    fun load(url: String) { activeView()?.loadUrl(url) }
+    fun load(url: String) {
+        // The new-tab page is the app's own page: it is shown by blanking the WebView, never by a request.
+        activeView()?.loadUrl(if (UrlPolicy.isNewTabAddress(url)) UrlPolicy.BLANK_PAGE else url)
+    }
     fun goBack() { activeView()?.takeIf { it.canGoBack() }?.goBack() }
     fun goForward() { activeView()?.takeIf { it.canGoForward() }?.goForward() }
     fun reload() { activeView()?.reload() }
@@ -213,7 +224,8 @@ class WebViewController(
             title = view.title.orEmpty(),
             canGoBack = view.canGoBack(),
             canGoForward = view.canGoForward(),
-            progress = view.progress,
+            // A new tab that never loaded anything has no progress to show.
+            progress = if (view.url == null) 100 else view.progress,
         )
         unloadExcessViews()
     }
@@ -278,8 +290,11 @@ class WebViewController(
         if (tabId in haltedTabs) {
             view.loadUrl(UrlPolicy.HOME_URL)
         } else if (!restoreSession(tabId, view)) {
-            view.loadUrl(allowedUrl(initialUrl))
+            val target = allowedUrl(initialUrl)
+            // A new tab starts on the app's own new-tab page: no website is requested for it.
+            if (!UrlPolicy.isNewTabAddress(target)) view.loadUrl(target)
         }
+        view.setOnLongClickListener { handleLongPress(tabId, view) }
         return view
     }
 
@@ -307,7 +322,35 @@ class WebViewController(
     private fun allowedUrl(url: String): String = when (val decision = UrlPolicy.checkNavigation(url)) {
         UrlPolicy.Decision.Allow -> url
         is UrlPolicy.Decision.Upgrade -> decision.url
-        UrlPolicy.Decision.Block -> UrlPolicy.HOME_URL
+        UrlPolicy.Decision.Block -> UrlPolicy.NEW_TAB_URL
+    }
+
+    /**
+     * Long press on a link (also a link around an image) in the active tab. The link is only reported
+     * to [linkLongPressListener]; nothing is loaded here. Returns true when the press was used.
+     */
+    private fun handleLongPress(tabId: String, view: WebView): Boolean {
+        if (tabId != activeId || views[tabId] !== view) return false
+        val listener = linkLongPressListener ?: return false
+        val result = view.hitTestResult
+        when (result.type) {
+            WebView.HitTestResult.SRC_ANCHOR_TYPE -> {
+                val link = result.extra ?: return false
+                listener(tabId, link)
+                return true
+            }
+            WebView.HitTestResult.SRC_IMAGE_ANCHOR_TYPE -> {
+                // For an image that is a link, "extra" is the image address: ask the page for the link.
+                val reply = Handler(Looper.getMainLooper()) { message ->
+                    val link = message.data.getString("url")
+                    if (link != null && tabId == activeId && views[tabId] === view) listener(tabId, link)
+                    true
+                }
+                view.requestFocusNodeHref(reply.obtainMessage())
+                return true
+            }
+        }
+        return false
     }
 
     private fun destroyView(view: WebView) {
@@ -397,13 +440,13 @@ class WebViewController(
                 stateManager.onHistoryChanged(url, view.canGoBack(), view.canGoForward())
                 if (haltNotice != null) stateManager.onError(haltNotice)
             }
-            pageListener?.invoke(tabId, view.url ?: url, view.title)
+            pageListener?.invoke(tabId, UrlPolicy.reportedAddress(view.url ?: url), view.title)
             if (tabId !in failedLoads) visitListener?.invoke(tabId, view.url ?: url, view.title)
         }
 
         override fun doUpdateVisitedHistory(view: WebView, url: String?, isReload: Boolean) {
             if (isActive()) stateManager.onHistoryChanged(url, view.canGoBack(), view.canGoForward())
-            pageListener?.invoke(tabId, url, null)
+            pageListener?.invoke(tabId, UrlPolicy.reportedAddress(url), null)
         }
 
         override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
@@ -445,8 +488,10 @@ class WebViewController(
         }
 
         override fun onReceivedTitle(view: WebView, title: String?) {
-            if (tabId == activeId) stateManager.onTitle(title)
-            pageListener?.invoke(tabId, null, title)
+            // A blank page can report its own address as the title; the new-tab page has no title.
+            val shown = title?.takeUnless { it.trim().equals(UrlPolicy.BLANK_PAGE, ignoreCase = true) }
+            if (tabId == activeId) stateManager.onTitle(shown)
+            pageListener?.invoke(tabId, null, shown)
         }
 
         // Camera / mic / etc. are denied: there is no permission UI.
