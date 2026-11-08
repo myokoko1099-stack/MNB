@@ -79,6 +79,7 @@ fun BrowserScreen(
     uiPreferences: UiPreferences,
     tabManager: TabManager,
     library: BrowserLibrary,
+    versionName: String? = null,
 ) {
     val state = stateManager.state
     val extractionUi = extractionState.state
@@ -255,6 +256,7 @@ fun BrowserScreen(
                     readerSettingsRepository = readerSettings,
                     geminiKeySettings = LocalGeminiKeySettings.current,
                     onBack = { settingsOpen = false },
+                    versionName = versionName,
                 )
             }
 

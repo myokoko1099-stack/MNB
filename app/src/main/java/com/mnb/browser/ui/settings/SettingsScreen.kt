@@ -55,19 +55,27 @@ fun SettingsScreen(
     modifier: Modifier = Modifier,
     versionName: String? = null,
 ) {
-    var readerSettings by remember(readerSettingsRepository) { mutableStateOf(readerSettingsRepository.load()) }
+    var readerSettings by remember(readerSettingsRepository) {
+        mutableStateOf(readerSettingsRepository.load())
+    }
     fun updateReaderSettings(newSettings: ReaderSettings) {
         val clean = newSettings.sanitized()
         readerSettings = clean
         readerSettingsRepository.save(clean)
     }
     Column(
-        modifier = modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface),
+        modifier = modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.surface),
     ) {
         SettingsTopBar(onBack)
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
             Column(
-                modifier = Modifier.widthIn(max = 640.dp).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp),
+                modifier = Modifier
+                    .widthIn(max = 640.dp)
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(20.dp),
             ) {
                 GeneralSection(prefs)
@@ -86,16 +94,34 @@ fun SettingsScreen(
 
 @Composable
 private fun SettingsTopBar(onBack: () -> Unit) {
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp)) {
-        IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = SettingsScreenText.BACK_DESCRIPTION) }
-        Text(SettingsScreenText.SCREEN_TITLE, style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 4.dp, vertical = 4.dp),
+    ) {
+        IconButton(onClick = onBack) {
+            Icon(
+                Icons.AutoMirrored.Filled.ArrowBack,
+                contentDescription = SettingsScreenText.BACK_DESCRIPTION,
+            )
+        }
+        Text(
+            SettingsScreenText.SCREEN_TITLE,
+            style = MaterialTheme.typography.titleLarge,
+            modifier = Modifier.semantics { heading() },
+        )
     }
 }
 
 @Composable
 private fun GeneralSection(prefs: UiPreferences) {
     SettingsSectionCard(SettingsSection.General.title) {
-        Text(SettingsScreenText.APPEARANCE_LABEL, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(
+            SettingsScreenText.APPEARANCE_LABEL,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
         Column(Modifier.selectableGroup()) {
             SettingsText.themeChoices.forEach { choice ->
                 ThemeRadioRow(choice, prefs.themeMode == choice.mode) { prefs.updateThemeMode(choice.mode) }
@@ -106,11 +132,21 @@ private fun GeneralSection(prefs: UiPreferences) {
 
 @Composable
 private fun ThemeRadioRow(choice: SettingsText.ThemeChoice, selected: Boolean, onSelect: () -> Unit) {
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp).selectable(selected = selected, onClick = onSelect, role = Role.RadioButton)) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 56.dp)
+            .selectable(selected = selected, onClick = onSelect, role = Role.RadioButton),
+    ) {
         RadioButton(selected = selected, onClick = null)
         Column(Modifier.padding(start = 12.dp)) {
             Text(choice.label, style = MaterialTheme.typography.bodyLarge)
-            Text(choice.description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                choice.description,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }
@@ -135,17 +171,38 @@ private fun TranslationProviderSection() {
 @Composable
 private fun GeminiConfigurationSection(controller: GeminiKeySettingsController?) {
     SettingsSectionCard(SettingsSection.GeminiConfiguration.title) {
-        if (controller == null) SettingsPlaceholder(SettingsScreenText.PLACEHOLDER_BADGE, SettingsScreenText.GEMINI_UNAVAILABLE)
-        else GeminiApiKeySection(controller)
+        if (controller == null) {
+            SettingsPlaceholder(
+                SettingsScreenText.PLACEHOLDER_BADGE,
+                SettingsScreenText.GEMINI_UNAVAILABLE,
+            )
+        } else {
+            GeminiApiKeySection(controller)
+        }
     }
 }
 
 @Composable
 private fun ReaderSettingsSection(settings: ReaderSettings, onChange: (ReaderSettings) -> Unit) {
     SettingsSectionCard(SettingsSection.ReaderPreferences.title) {
-        ReaderSlider("Font size", settings.fontSizeSp, ReaderSettings.FONT_SIZE_RANGE, "sp") { onChange(settings.copy(fontSizeSp = it)) }
-        ReaderSlider("Margin", settings.marginDp, ReaderSettings.MARGIN_RANGE, "dp") { onChange(settings.copy(marginDp = it)) }
-        ReaderSlider("Paragraph spacing", settings.paragraphSpacingDp, ReaderSettings.PARAGRAPH_SPACING_RANGE, "dp") { onChange(settings.copy(paragraphSpacingDp = it)) }
+        ReaderSlider(
+            "Font size",
+            settings.fontSizeSp,
+            ReaderSettings.FONT_SIZE_RANGE,
+            "sp",
+        ) { onChange(settings.copy(fontSizeSp = it)) }
+        ReaderSlider(
+            "Margin",
+            settings.marginDp,
+            ReaderSettings.MARGIN_RANGE,
+            "dp",
+        ) { onChange(settings.copy(marginDp = it)) }
+        ReaderSlider(
+            "Paragraph spacing",
+            settings.paragraphSpacingDp,
+            ReaderSettings.PARAGRAPH_SPACING_RANGE,
+            "dp",
+        ) { onChange(settings.copy(paragraphSpacingDp = it)) }
         Text("Reader theme", style = MaterialTheme.typography.bodyMedium)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             ReaderThemeChip("System", ReaderTheme.SYSTEM, settings, onChange)
@@ -156,34 +213,63 @@ private fun ReaderSettingsSection(settings: ReaderSettings, onChange: (ReaderSet
 }
 
 @Composable
-private fun ReaderThemeChip(label: String, theme: ReaderTheme, settings: ReaderSettings, onChange: (ReaderSettings) -> Unit) {
-    FilterChip(selected = settings.theme == theme, onClick = { onChange(settings.copy(theme = theme)) }, label = { Text(label) })
+private fun ReaderThemeChip(
+    label: String,
+    theme: ReaderTheme,
+    settings: ReaderSettings,
+    onChange: (ReaderSettings) -> Unit,
+) {
+    FilterChip(
+        selected = settings.theme == theme,
+        onClick = { onChange(settings.copy(theme = theme)) },
+        label = { Text(label) },
+    )
 }
 
 @Composable
-private fun ReaderSlider(label: String, value: Int, range: IntRange, unit: String, onChange: (Int) -> Unit) {
+private fun ReaderSlider(
+    label: String,
+    value: Int,
+    range: IntRange,
+    unit: String,
+    onChange: (Int) -> Unit,
+) {
     Column(Modifier.fillMaxWidth()) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text(label, style = MaterialTheme.typography.bodyMedium)
             Text("$value $unit", style = MaterialTheme.typography.bodyMedium)
         }
-        Slider(value = value.toFloat(), onValueChange = { onChange(it.roundToInt()) }, valueRange = range.first.toFloat()..range.last.toFloat(), steps = range.last - range.first - 1)
+        Slider(
+            value = value.toFloat(),
+            onValueChange = { onChange(it.roundToInt()) },
+            valueRange = range.first.toFloat()..range.last.toFloat(),
+            steps = range.last - range.first - 1,
+        )
     }
 }
 
 @Composable
 private fun BrowserSettingsSection(prefs: UiPreferences) {
     SettingsSectionCard(SettingsSection.BrowserPreferences.title) {
-        SettingsInfoRow("Novel shortcuts", "${prefs.getShortcuts().size} saved")
+        SettingsInfoRow(
+            "Novel shortcuts",
+            "${prefs.getShortcuts().size} saved",
+        )
         SettingsNote(SettingsScreenText.BROWSER_PREFS_NOTE)
-        SettingsPlaceholder(SettingsScreenText.PLACEHOLDER_BADGE, SettingsScreenText.SAFE_MODE_UNAVAILABLE)
+        SettingsPlaceholder(
+            SettingsScreenText.PLACEHOLDER_BADGE,
+            SettingsScreenText.SAFE_MODE_UNAVAILABLE,
+        )
     }
 }
 
 @Composable
 private fun TranslationBehaviorSection() {
     SettingsSectionCard(SettingsSection.TranslationBehavior.title) {
-        SettingsPlaceholder(SettingsScreenText.PLACEHOLDER_BADGE, SettingsScreenText.BEHAVIOR_PLACEHOLDER)
+        SettingsPlaceholder(
+            SettingsScreenText.PLACEHOLDER_BADGE,
+            SettingsScreenText.BEHAVIOR_PLACEHOLDER,
+        )
     }
 }
 
@@ -191,7 +277,11 @@ private fun TranslationBehaviorSection() {
 private fun AboutSection(versionName: String?) {
     SettingsSectionCard(SettingsSection.About.title) {
         Text(SettingsScreenText.APP_NAME, style = MaterialTheme.typography.titleMedium)
-        Text(SettingsScreenText.versionLabel(versionName), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(
+            SettingsScreenText.versionLabel(versionName),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
         SettingsNote(SettingsScreenText.LICENSE_NOTICE)
     }
 }

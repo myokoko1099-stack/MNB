@@ -54,6 +54,11 @@ import java.util.concurrent.Executors
 class MainActivity : ComponentActivity() {
     private val stateManager = BrowserStateManager()
 
+    @Suppress("DEPRECATION")
+    private val appVersionName: String? by lazy {
+        runCatching { packageManager.getPackageInfo(packageName, 0).versionName }.getOrNull()
+    }
+
     // Phase 2B: one background thread for everything about tabs that touches disk: the tab list in
     // Room, one WebView session file per tab, and removing session files of closed tabs. Nothing
     // here runs on the main thread. Created on first use.
@@ -215,6 +220,7 @@ class MainActivity : ComponentActivity() {
                         stateManager, webController, navigation, extraction, extractionState,
                         readerState, readerPositions, readerSettings, uiPreferences, tabManager,
                         library,
+                        versionName = appVersionName,
                     )
                 }
             }
