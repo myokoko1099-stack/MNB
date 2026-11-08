@@ -45,6 +45,11 @@ class ChapterTitleParserTest {
         assertNull(ChapterTitleParser.parse("Chapter 12 第13章"))
     }
 
+    @Test fun sameNumberRepeatedIsAccepted() {
+        assertEquals(1, ChapterTitleParser.parse("Chapter 1: Chapter 1 - My Girlfriend Is Already Fully Trained | NovelDex"))
+        assertEquals(12, ChapterTitleParser.parse("Chapter 12 第12章"))
+    }
+
     @Test fun tooManyDigitsOrFullWidthDigits() {
         assertNull(ChapterTitleParser.parse("Chapter 1234567"))
         assertNull(ChapterTitleParser.parse("第１２章"))
