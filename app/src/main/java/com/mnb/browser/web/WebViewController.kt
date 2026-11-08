@@ -29,6 +29,9 @@ import androidx.compose.runtime.setValue
 import com.mnb.browser.error.ErrorHandler
 import com.mnb.browser.extraction.ExtractionScript
 import com.mnb.browser.navigation.UrlPolicy
+import com.mnb.browser.readermode.PageSession
+import com.mnb.browser.readermode.PageSessionManager
+import com.mnb.browser.readermode.ReaderModeController
 import com.mnb.browser.state.BrowserError
 import com.mnb.browser.state.BrowserStateManager
 import java.util.concurrent.Executor
@@ -69,6 +72,12 @@ class WebViewController(
     private val crashGuard: CrashLoopGuard = CrashLoopGuard(),
 ) {
 
+    /** Pure page/document identity shared by extraction and reader-mode work. */
+    val pageSessionManager = PageSessionManager()
+
+    /** Per-tab reader-mode state; WebView lifecycle invalidates stale work through this controller. */
+    val readerModeController = ReaderModeController()
+
     /**
      * Changes every time the active tab's WebView had to be thrown away and must be mounted again
      * (renderer crash). The screen reads it, so it recomposes and calls [mount]. Main thread.
@@ -91,6 +100,9 @@ class WebViewController(
      * (redirects, repeated callbacks), so the receiver must de-duplicate. Main thread.
      */
     var visitListener: ((tabId: String, url: String?, title: String?) -> Unit)? = null
+
+    /** Called when a tab stops being active so page-scoped foreground work can be invalidated. */
+    var tabDeactivatedListener: ((tabId: String) -> Unit)? = null
 
     private val views = HashMap<String, WebView>()
     private val stores = HashMap<String, WebSessionStore>()
@@ -135,6 +147,8 @@ class WebViewController(
     /** Detaches, then destroys, the WebView of a closed tab and deletes its saved session. */
     fun closeTab(tabId: String) {
         views.remove(tabId)?.let { destroyView(it) }
+        pageSessionManager.closeTab(tabId)
+        readerModeController.closeTab(tabId)
         if (activeId == tabId) activeId = null
         stores.remove(tabId)
         failedLoads.remove(tabId)
@@ -157,6 +171,14 @@ class WebViewController(
         // The new-tab page is the app's own page: it is shown by blanking the WebView, never by a request.
         activeView()?.loadUrl(if (UrlPolicy.isNewTabAddress(url)) UrlPolicy.BLANK_PAGE else url)
     }
+
+    fun activeTabId(): String? = activeId
+
+    fun currentPageSession(tabId: String): PageSession? = pageSessionManager.current(tabId)
+
+    fun isCurrentPageSession(tabId: String, expected: PageSession): Boolean =
+        pageSessionManager.current(tabId)?.sameDocumentAs(expected) == true
+
     fun goBack() { activeView()?.takeIf { it.canGoBack() }?.goBack() }
     fun goForward() { activeView()?.takeIf { it.canGoForward() }?.goForward() }
     fun reload() { activeView()?.reload() }
@@ -197,6 +219,8 @@ class WebViewController(
     fun destroy() {
         for (view in views.values) destroyView(view)
         views.clear()
+        pageSessionManager.clear()
+        readerModeController.clear()
         stores.clear()
         failedLoads.clear()
         useOrder.clear()
@@ -210,6 +234,7 @@ class WebViewController(
     private fun activate(tabId: String, view: WebView, fallbackUrl: String) {
         val previousId = activeId
         if (previousId != null) {
+            if (previousId != tabId) tabDeactivatedListener?.invoke(previousId)
             views[previousId]?.let { previous ->
                 saveSession(previousId, previous)
                 previous.onPause()
@@ -251,6 +276,8 @@ class WebViewController(
             unloadedStates[tabId] = bytes
             storeFor(tabId)?.let { store -> runIo { store.save(bytes) } }
         }
+        pageSessionManager.onWebViewUnloaded(tabId)
+        readerModeController.onPageSessionChanged(tabId, null)
         destroyView(view)
     }
 
@@ -263,6 +290,8 @@ class WebViewController(
         if (views[tabId] !== view) return // already replaced or unloaded
         val wasActive = tabId == activeId
         val pageUrl = try { view.url } catch (e: Exception) { null }
+        pageSessionManager.onRendererCrashed(tabId)
+        readerModeController.onPageSessionChanged(tabId, null)
         views.remove(tabId)
         useOrder.remove(tabId)
         failedLoads.remove(tabId)
@@ -417,9 +446,17 @@ class WebViewController(
 
         override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
             val url = request.url.toString()
+            val isMainFrameRedirect = request.isForMainFrame && request.isRedirect
             return when (val decision = UrlPolicy.checkNavigation(url)) {
-                UrlPolicy.Decision.Allow -> false
-                is UrlPolicy.Decision.Upgrade -> { view.loadUrl(decision.url); true }
+                UrlPolicy.Decision.Allow -> {
+                    if (isMainFrameRedirect) pageSessionManager.onRedirectRequested(tabId, url)
+                    false
+                }
+                is UrlPolicy.Decision.Upgrade -> {
+                    if (isMainFrameRedirect) pageSessionManager.onRedirectRequested(tabId, decision.url)
+                    view.loadUrl(decision.url)
+                    true
+                }
                 UrlPolicy.Decision.Block -> {
                     if (isActive()) stateManager.onError(ErrorHandler.blocked(url))
                     true
@@ -429,12 +466,16 @@ class WebViewController(
 
         override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) {
             failedLoads.remove(tabId)
+            val session = pageSessionManager.onPageStarted(tabId, url)
+            readerModeController.onPageSessionChanged(tabId, session)
             if (isActive()) stateManager.onPageStarted(url)
         }
 
         override fun onPageFinished(view: WebView, url: String?) {
             // The first finished page of a crash-looping tab is the home page it restarted on.
             val haltNotice = haltedTabs.remove(tabId)
+            val session = pageSessionManager.onPageFinished(tabId, view.url ?: url)
+            readerModeController.onPageSessionChanged(tabId, session)
             if (isActive()) {
                 stateManager.onPageFinished(url)
                 stateManager.onHistoryChanged(url, view.canGoBack(), view.canGoForward())
@@ -445,6 +486,8 @@ class WebViewController(
         }
 
         override fun doUpdateVisitedHistory(view: WebView, url: String?, isReload: Boolean) {
+            val session = pageSessionManager.onHistoryUpdated(tabId, url, isReload)
+            readerModeController.onPageSessionChanged(tabId, session)
             if (isActive()) stateManager.onHistoryChanged(url, view.canGoBack(), view.canGoForward())
             pageListener?.invoke(tabId, UrlPolicy.reportedAddress(url), null)
         }

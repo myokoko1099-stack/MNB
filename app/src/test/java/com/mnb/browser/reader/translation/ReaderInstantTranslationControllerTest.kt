@@ -182,6 +182,24 @@ class ReaderInstantTranslationControllerTest {
         assertEquals(1, f.ensureCalls)
     }
 
+    @Test fun lifecycleCancellationIsCheckedInsideTheProductionTranslationOperation() {
+        var cancelled = false
+        val f = Fixture(runnerBody = { request, isCancelled ->
+            assertTrue(isCancelled())
+            c1Completed(c1Stored(request.chapterId))
+        })
+        val content = c1Chapter(1)
+        f.open(content)
+
+        assertEquals(StartResult.STARTED, f.controller.start(content, isCancelled = { cancelled }))
+        cancelled = true
+        f.executor.runAll()
+
+        assertEquals(true, f.cancelledSeenAtRun)
+        // The pipeline result cannot be published after the originating page operation is cancelled.
+        assertEquals(ReaderTranslationState.Processing(), f.state)
+    }
+
     @Test fun mockOutputInAStoredResultIsNeverCompleted() {
         val f = Fixture(runnerBody = { r, _ -> c1Completed(c1Stored(r.chapterId, isMock = true)) })
         val content = c1Chapter(1)

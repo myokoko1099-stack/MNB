@@ -1,0 +1,160 @@
+package com.mnb.browser.readermode
+
+import java.net.URI
+import java.util.UUID
+
+/** Identity of one document loaded in one browser tab. */
+data class PageSession(
+    val tabId: String,
+    val navGeneration: Long,
+    val normalizedUrl: String,
+    val documentToken: String,
+) {
+    /** Stable identity used to accept results; URL changes within the same document do not matter. */
+    fun sameDocumentAs(other: PageSession?): Boolean =
+        other != null &&
+            tabId == other.tabId &&
+            navGeneration == other.navGeneration &&
+            documentToken == other.documentToken
+}
+
+/**
+ * Tracks one identity per main-frame document load, independently for every tab. WebView's explicit
+ * server-redirect signal identifies redirect starts; reload history callbacks coalesce with an
+ * in-flight document even when the callback URL differs because of a redirect.
+ */
+class PageSessionManager(
+    private val newDocumentToken: () -> String = { UUID.randomUUID().toString() },
+) {
+    private data class LoadState(
+        var inProgress: Boolean = false,
+        var redirectTarget: String? = null,
+    )
+
+    private val sessions = LinkedHashMap<String, PageSession>()
+    private val generations = HashMap<String, Long>()
+    private val loads = HashMap<String, LoadState>()
+
+    @Synchronized
+    fun current(tabId: String): PageSession? = sessions[tabId]
+
+    /** A top-level start is a new document unless WebView identified it as an HTTP redirect. */
+    @Synchronized
+    fun onPageStarted(tabId: String, url: String?): PageSession {
+        val load = loads.getOrPut(tabId) { LoadState() }
+        val existing = sessions[tabId]
+        val isRedirect = load.inProgress && load.redirectTarget == normalizeUrl(url)
+        val session = if (isRedirect && existing != null) {
+            updateUrl(existing, url)
+        } else {
+            beginNewDocument(tabId, url)
+        }
+        load.inProgress = true
+        load.redirectTarget = null
+        return session
+    }
+
+    /** Records a main-frame redirect target; unrelated or subframe requests must not call this. */
+    @Synchronized
+    fun onRedirectRequested(tabId: String, url: String?) {
+        val load = loads[tabId] ?: return
+        if (load.inProgress) load.redirectTarget = normalizeUrl(url)
+    }
+
+    /** Explicit reload signal used by callers that initiate reload outside WebView callbacks. */
+    @Synchronized
+    fun onReload(tabId: String, url: String?): PageSession {
+        val session = beginNewDocument(tabId, url)
+        loads.getOrPut(tabId) { LoadState() }.apply { inProgress = true; redirectTarget = null }
+        return session
+    }
+
+    /**
+     * A history callback reports URL/history information, not a unique document transition. In
+     * particular, isReload may arrive after onPageFinished, so it must never mint an identity for
+     * an existing session. Main-frame starts (or explicit onReload calls) own identity creation.
+     */
+    @Synchronized
+    @Suppress("UNUSED_PARAMETER")
+    fun onHistoryUpdated(tabId: String, url: String?, isReload: Boolean): PageSession {
+        val existing = sessions[tabId]
+        val load = loads.getOrPut(tabId) { LoadState() }
+        if (existing == null) {
+            val session = beginNewDocument(tabId, url)
+            load.apply { inProgress = true; redirectTarget = null }
+            return session
+        }
+        return updateUrl(existing, url)
+    }
+
+    /** Finishing a load records the final URL and closes the callback window; duplicate finishes are idempotent. */
+    @Synchronized
+    fun onPageFinished(tabId: String, url: String?): PageSession {
+        val existing = sessions[tabId]
+        val load = loads.remove(tabId)
+        if (existing == null) return beginNewDocument(tabId, url)
+        // Repeated finish callbacks are not new transitions and must not roll a final URL backward.
+        return if (load != null) updateUrl(existing, url) else existing
+    }
+
+    /** A destroyed/unloaded WebView invalidates all work for that document. */
+    @Synchronized
+    fun onWebViewUnloaded(tabId: String) {
+        sessions.remove(tabId)
+        loads.remove(tabId)
+    }
+
+    /** Renderer loss invalidates the old document before WebView recreation. */
+    @Synchronized
+    fun onRendererCrashed(tabId: String) {
+        sessions.remove(tabId)
+        loads.remove(tabId)
+    }
+
+    @Synchronized
+    fun closeTab(tabId: String) {
+        sessions.remove(tabId)
+        generations.remove(tabId)
+        loads.remove(tabId)
+    }
+
+    @Synchronized
+    fun clear() {
+        sessions.clear()
+        generations.clear()
+        loads.clear()
+    }
+
+    private fun updateUrl(existing: PageSession, url: String?): PageSession =
+        existing.copy(normalizedUrl = normalizeUrl(url)).also { sessions[existing.tabId] = it }
+
+    private fun beginNewDocument(tabId: String, url: String?): PageSession {
+        val generation = (generations[tabId] ?: 0L) + 1L
+        generations[tabId] = generation
+        return PageSession(tabId, generation, normalizeUrl(url), newDocumentToken()).also {
+            sessions[tabId] = it
+        }
+    }
+
+    companion object {
+        /** Normalizes only transport/host spelling; path, query, and fragment remain observable URL data. */
+        fun normalizeUrl(url: String?): String {
+            val text = url?.trim().orEmpty()
+            if (text.isEmpty()) return ""
+            return try {
+                val uri = URI(text)
+                URI(
+                    uri.scheme?.lowercase(),
+                    uri.userInfo,
+                    uri.host?.lowercase(),
+                    uri.port,
+                    uri.path,
+                    uri.query,
+                    uri.fragment,
+                ).toString()
+            } catch (_: Exception) {
+                text
+            }
+        }
+    }
+}

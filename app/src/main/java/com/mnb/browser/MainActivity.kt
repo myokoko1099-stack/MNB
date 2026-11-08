@@ -19,6 +19,7 @@ import com.mnb.browser.reader.ReaderStateManager
 import com.mnb.browser.reader.translation.BackgroundTranslationWiring
 import com.mnb.browser.reader.translation.BoundChapterIdentityResolver
 import com.mnb.browser.reader.translation.InstantTranslationWiring
+import com.mnb.browser.reader.translation.LifecycleReaderTranslationActions
 import com.mnb.browser.reader.translation.LocalReaderTranslationActions
 import com.mnb.browser.reader.translation.NovelBindingStore
 import com.mnb.browser.reader.translation.ReaderBackgroundTranslationCoordinator
@@ -144,6 +145,9 @@ class MainActivity : ComponentActivity() {
             executor = translationExecutorLazy.value,
         )
     }
+    private val lifecycleTranslationActions by lazy {
+        LifecycleReaderTranslationActions(translationController, webController)
+    }
 
     // Phase 04-I10-C2: background translation follows reader navigation on its own single thread
     // (database and queue work never run on the main thread).
@@ -213,7 +217,7 @@ class MainActivity : ComponentActivity() {
             val uiPreferences = remember { UiPreferences(applicationContext) }
             MnbTheme(uiPreferences.themeMode) {
                 CompositionLocalProvider(
-                    LocalReaderTranslationActions provides translationController,
+                    LocalReaderTranslationActions provides lifecycleTranslationActions,
                     LocalGeminiKeySettings provides geminiKeySettings,
                 ) {
                     BrowserScreen(
