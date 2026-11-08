@@ -70,19 +70,15 @@ class PageSessionManager(
     }
 
     /**
-     * History callbacks are URL updates within a document. A reload callback creates a document
-     * only when no main-frame load is already in progress; thus either callback ordering is safe,
-     * and redirected URLs do not cause another generation.
+     * A history callback reports URL/history information, not a unique document transition. In
+     * particular, isReload may arrive after onPageFinished, so it must never mint an identity for
+     * an existing session. Main-frame starts (or explicit onReload calls) own identity creation.
      */
     @Synchronized
+    @Suppress("UNUSED_PARAMETER")
     fun onHistoryUpdated(tabId: String, url: String?, isReload: Boolean): PageSession {
         val existing = sessions[tabId]
         val load = loads.getOrPut(tabId) { LoadState() }
-        if (isReload && !load.inProgress) {
-            val session = beginNewDocument(tabId, url)
-            load.apply { inProgress = true; redirectTarget = null }
-            return session
-        }
         if (existing == null) {
             val session = beginNewDocument(tabId, url)
             load.apply { inProgress = true; redirectTarget = null }

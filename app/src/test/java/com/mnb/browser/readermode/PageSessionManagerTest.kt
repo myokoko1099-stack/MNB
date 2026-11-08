@@ -49,14 +49,15 @@ class PageSessionManagerTest {
     }
 
     @Test
-    fun historyCallbackWithReloadCreatesNewIdentity() {
+    fun reloadHistoryCallbackAloneDoesNotCreateAnUncorrelatedIdentity() {
         val manager = manager()
         val first = manager.onPageStarted("tab-a", "https://example.test/story")
         manager.onPageFinished("tab-a", "https://example.test/story")
         val reloaded = manager.onHistoryUpdated("tab-a", "https://example.test/story", true)
 
-        assertTrue(!first.sameDocumentAs(reloaded))
-        assertEquals(2L, reloaded.navGeneration)
+        assertTrue(first.sameDocumentAs(reloaded))
+        assertEquals(first.documentToken, reloaded.documentToken)
+        assertEquals(1L, reloaded.navGeneration)
     }
 
     @Test
@@ -74,6 +75,90 @@ class PageSessionManagerTest {
         assertTrue(reloadStarted.sameDocumentAs(reloadFinished))
         assertEquals(2L, reloadFinished.navGeneration)
         assertTrue(!initial.sameDocumentAs(reloadFinished))
+    }
+
+    @Test
+    fun pageStartedPageFinishedThenReloadHistoryCreatesOnlyOneNewIdentity() {
+        val manager = manager()
+        val original = manager.onPageStarted("tab-a", "https://example.test/story")
+        manager.onPageFinished("tab-a", "https://example.test/story")
+        val reload = manager.onPageStarted("tab-a", "https://example.test/story")
+        val finished = manager.onPageFinished("tab-a", "https://example.test/story")
+        val history = manager.onHistoryUpdated("tab-a", "https://example.test/story", true)
+
+        assertTrue(!original.sameDocumentAs(reload))
+        assertTrue(reload.sameDocumentAs(finished))
+        assertTrue(reload.sameDocumentAs(history))
+        assertEquals(2L, history.navGeneration)
+        assertEquals(reload.documentToken, history.documentToken)
+    }
+
+    @Test
+    fun pageStartedReloadHistoryPageFinishedCreatesOnlyOneNewIdentity() {
+        val manager = manager()
+        val original = manager.onPageStarted("tab-a", "https://example.test/story")
+        manager.onPageFinished("tab-a", "https://example.test/story")
+        val reload = manager.onPageStarted("tab-a", "https://example.test/story")
+        val history = manager.onHistoryUpdated("tab-a", "https://example.test/story", true)
+        val finished = manager.onPageFinished("tab-a", "https://example.test/story")
+
+        assertTrue(!original.sameDocumentAs(reload))
+        assertTrue(reload.sameDocumentAs(history))
+        assertTrue(reload.sameDocumentAs(finished))
+        assertEquals(2L, finished.navGeneration)
+        assertEquals(reload.documentToken, finished.documentToken)
+    }
+
+    @Test
+    fun reloadHistoryPageStartedPageFinishedCreatesOnlyOneNewIdentity() {
+        val manager = manager()
+        val original = manager.onPageStarted("tab-a", "https://example.test/story")
+        manager.onPageFinished("tab-a", "https://example.test/story")
+        val history = manager.onHistoryUpdated("tab-a", "https://example.test/story", true)
+        val reload = manager.onPageStarted("tab-a", "https://example.test/story")
+        val finished = manager.onPageFinished("tab-a", "https://example.test/story")
+
+        assertTrue(original.sameDocumentAs(history))
+        assertTrue(!history.sameDocumentAs(reload))
+        assertTrue(reload.sameDocumentAs(finished))
+        assertEquals(2L, finished.navGeneration)
+        assertEquals(reload.documentToken, finished.documentToken)
+    }
+
+    @Test
+    fun delayedReloadHistoryAfterServerRedirectDoesNotCreateAnotherIdentity() {
+        val manager = manager()
+        val original = manager.onPageStarted("tab-a", "https://example.test/story")
+        manager.onPageFinished("tab-a", "https://example.test/story")
+        val reload = manager.onPageStarted("tab-a", "https://example.test/reload")
+        manager.onRedirectRequested("tab-a", "https://redirect.test/final")
+        val redirected = manager.onPageStarted("tab-a", "https://redirect.test/final")
+        val finished = manager.onPageFinished("tab-a", "https://redirect.test/final")
+        val history = manager.onHistoryUpdated("tab-a", "https://redirect.test/final", true)
+
+        assertTrue(!original.sameDocumentAs(reload))
+        assertTrue(reload.sameDocumentAs(redirected))
+        assertTrue(reload.sameDocumentAs(finished))
+        assertTrue(reload.sameDocumentAs(history))
+        assertEquals(2L, history.navGeneration)
+        assertEquals(reload.documentToken, history.documentToken)
+    }
+
+    @Test
+    fun duplicateFinishThenDelayedReloadHistoryKeepsTheSameIdentity() {
+        val manager = manager()
+        val original = manager.onPageStarted("tab-a", "https://example.test/story")
+        manager.onPageFinished("tab-a", "https://example.test/story")
+        val reload = manager.onPageStarted("tab-a", "https://example.test/story")
+        val finished1 = manager.onPageFinished("tab-a", "https://example.test/story")
+        val finished2 = manager.onPageFinished("tab-a", "https://example.test/story")
+        val history = manager.onHistoryUpdated("tab-a", "https://example.test/story", true)
+
+        assertTrue(!original.sameDocumentAs(reload))
+        assertEquals(finished1, finished2)
+        assertTrue(reload.sameDocumentAs(history))
+        assertEquals(2L, history.navGeneration)
+        assertEquals(reload.documentToken, history.documentToken)
     }
 
     @Test
@@ -161,7 +246,8 @@ class PageSessionManagerTest {
         val finalHistory = manager.onHistoryUpdated("tab-a", "https://final.test/story", true)
         val finished = manager.onPageFinished("tab-a", "https://final.test/story")
 
-        assertTrue(history.sameDocumentAs(started))
+        assertTrue(!history.sameDocumentAs(started))
+        assertEquals(2L, started.navGeneration)
         assertTrue(started.sameDocumentAs(finalHistory))
         assertTrue(started.sameDocumentAs(finished))
         assertEquals(2L, finished.navGeneration)
