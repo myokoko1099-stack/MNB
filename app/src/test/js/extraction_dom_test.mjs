@@ -18,7 +18,7 @@ assert.ok(end > from, 'Kotlin DOM script has a closing delimiter');
 const source = kt.slice(from, end).split('\n').map(line => line.replace(/^ {8}/, '')).join('\n');
 assert.ok(source.includes(marker), 'DOM script has its payload placeholder');
 const base = { sessionToken: 'test-session-1', documentToken: 'test-document-1', tabId: 'test-tab', navGeneration: 12 };
-const invoke = (payload = {}) => source.replace(marker, JSON.stringify({ ...base, ...payload }));
+const invoke = (payload = {}) => source.replace(marker, JSON.stringify({ ...base, op: 'extract', ...payload }));
 
 const fixtures = [
   ['Royal Road-like chapter', `<!doctype html><title>Book | Royal Road</title><body>
