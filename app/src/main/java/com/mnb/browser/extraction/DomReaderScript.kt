@@ -250,6 +250,7 @@ internal object DomReaderScript {
         if (kept.state === 'Translated' || nextRecords.size < MAX_PARAGRAPHS) nextRecords.set(kept.index, kept);
       }
       state.records = nextRecords; state.dirty = false;
+      var mutationsSinceLast = state.mutations;
       installObserver(state, root);
       var chapterConfidence = Math.max(0, Math.min(1,
         (Math.min(out.length, 8) / 8) * 0.45 + (Math.min(total, 6000) / 6000) * 0.35 +
@@ -269,7 +270,7 @@ internal object DomReaderScript {
         url: String(location.href || ''), paragraphs: out,
         truncation: { truncated: scanned.truncated, totalCharacters: total,
           maxParagraphs: MAX_PARAGRAPHS, maxParagraphLength: MAX_LENGTH, maxTotalCharacters: MAX_TOTAL },
-        observer: { active: !!state.observer, mutationCount: state.mutations, dirty: state.dirty } });
+        observer: { active: !!state.observer, mutationCount: mutationsSinceLast, dirty: state.dirty } });
     } catch (e) { return answer({ sessionToken: arg.sessionToken, documentToken: arg.documentToken,
       tabId: arg.tabId, navGeneration: arg.navGeneration, status: 'error', error: String(e && e.message || e) }); }
   }
