@@ -18,47 +18,57 @@ import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import com.mnb.browser.reader.ReaderSettings
+import com.mnb.browser.reader.ReaderSettingsRepository
+import com.mnb.browser.reader.ReaderTheme
+import com.mnb.browser.settings.GeminiKeySettingsController
+import com.mnb.browser.ui.GeminiApiKeySection
 import com.mnb.browser.ui.premium.SettingsText
-import com.mnb.browser.ui.premium.ThemeMode
+import com.mnb.browser.ui.premium.UiPreferences
+import kotlin.math.roundToInt
 
-/**
- * Settings screen foundation (Phase 06-C1).
- *
- * Stateless: the caller owns the theme mode and the back action. It is not connected to app
- * navigation yet (Phase 06-C2), and it does not contain the Gemini API key UI (Phase 06-C3 / C4;
- * the existing key section of the current settings panel is untouched).
- *
- * Only General Settings (theme) changes anything. Translation Settings and Translation Provider
- * are read-only information, and Gemini Configuration and Translation Behavior are placeholders.
- */
+/** The single settings entry point used by the browser flow. */
 @Composable
 fun SettingsScreen(
-    themeMode: ThemeMode,
-    onThemeModeChange: (ThemeMode) -> Unit,
+    prefs: UiPreferences,
+    readerSettingsRepository: ReaderSettingsRepository,
+    geminiKeySettings: GeminiKeySettingsController?,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
     versionName: String? = null,
 ) {
+    var readerSettings by remember(readerSettingsRepository) {
+        mutableStateOf(readerSettingsRepository.load())
+    }
+    fun updateReaderSettings(newSettings: ReaderSettings) {
+        val clean = newSettings.sanitized()
+        readerSettings = clean
+        readerSettingsRepository.save(clean)
+    }
     Column(
         modifier = modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.surface),
     ) {
-        SettingsTopBar(onBack = onBack)
-
-        // Content is centered with a maximum width so it stays readable on tablets and in landscape.
+        SettingsTopBar(onBack)
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
             Column(
                 modifier = Modifier
@@ -68,11 +78,12 @@ fun SettingsScreen(
                     .padding(horizontal = 16.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(20.dp),
             ) {
-                // Same order as SettingsSection.values().
-                GeneralSection(themeMode, onThemeModeChange)
+                GeneralSection(prefs)
                 TranslationSettingsSection()
                 TranslationProviderSection()
-                GeminiConfigurationSection()
+                GeminiConfigurationSection(geminiKeySettings)
+                ReaderSettingsSection(readerSettings, ::updateReaderSettings)
+                BrowserSettingsSection(prefs)
                 TranslationBehaviorSection()
                 AboutSection(versionName)
                 Spacer(Modifier.height(8.dp))
@@ -91,12 +102,12 @@ private fun SettingsTopBar(onBack: () -> Unit) {
     ) {
         IconButton(onClick = onBack) {
             Icon(
-                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                Icons.AutoMirrored.Filled.ArrowBack,
                 contentDescription = SettingsScreenText.BACK_DESCRIPTION,
             )
         }
         Text(
-            text = SettingsScreenText.SCREEN_TITLE,
+            SettingsScreenText.SCREEN_TITLE,
             style = MaterialTheme.typography.titleLarge,
             modifier = Modifier.semantics { heading() },
         )
@@ -104,20 +115,16 @@ private fun SettingsTopBar(onBack: () -> Unit) {
 }
 
 @Composable
-private fun GeneralSection(themeMode: ThemeMode, onThemeModeChange: (ThemeMode) -> Unit) {
+private fun GeneralSection(prefs: UiPreferences) {
     SettingsSectionCard(SettingsSection.General.title) {
         Text(
-            text = SettingsScreenText.APPEARANCE_LABEL,
+            SettingsScreenText.APPEARANCE_LABEL,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Column(Modifier.selectableGroup()) {
             SettingsText.themeChoices.forEach { choice ->
-                ThemeRadioRow(
-                    choice = choice,
-                    selected = themeMode == choice.mode,
-                    onSelect = { onThemeModeChange(choice.mode) },
-                )
+                ThemeRadioRow(choice, prefs.themeMode == choice.mode) { prefs.updateThemeMode(choice.mode) }
             }
         }
     }
@@ -132,7 +139,6 @@ private fun ThemeRadioRow(choice: SettingsText.ThemeChoice, selected: Boolean, o
             .heightIn(min = 56.dp)
             .selectable(selected = selected, onClick = onSelect, role = Role.RadioButton),
     ) {
-        // The whole row is the single touch target; the radio itself is not clickable.
         RadioButton(selected = selected, onClick = null)
         Column(Modifier.padding(start = 12.dp)) {
             Text(choice.label, style = MaterialTheme.typography.bodyLarge)
@@ -148,14 +154,8 @@ private fun ThemeRadioRow(choice: SettingsText.ThemeChoice, selected: Boolean, o
 @Composable
 private fun TranslationSettingsSection() {
     SettingsSectionCard(SettingsSection.TranslationSettings.title) {
-        SettingsInfoRow(
-            label = SettingsScreenText.SOURCE_LANGUAGES_LABEL,
-            value = SettingsScreenText.sourceLanguagesSummary(),
-        )
-        SettingsInfoRow(
-            label = SettingsScreenText.TARGET_LANGUAGE_LABEL,
-            value = SettingsScreenText.targetLanguagesSummary(),
-        )
+        SettingsInfoRow(SettingsScreenText.SOURCE_LANGUAGES_LABEL, SettingsScreenText.sourceLanguagesSummary())
+        SettingsInfoRow(SettingsScreenText.TARGET_LANGUAGE_LABEL, SettingsScreenText.targetLanguagesSummary())
         SettingsNote(SettingsScreenText.LANGUAGES_FIXED_NOTE)
     }
 }
@@ -163,20 +163,102 @@ private fun TranslationSettingsSection() {
 @Composable
 private fun TranslationProviderSection() {
     SettingsSectionCard(SettingsSection.TranslationProvider.title) {
-        SettingsInfoRow(
-            label = SettingsScreenText.PROVIDER_LABEL,
-            value = SettingsScreenText.PROVIDER_NAME,
-        )
+        SettingsInfoRow(SettingsScreenText.PROVIDER_LABEL, SettingsScreenText.PROVIDER_NAME)
         SettingsNote(SettingsScreenText.PROVIDER_NOTE)
     }
 }
 
 @Composable
-private fun GeminiConfigurationSection() {
+private fun GeminiConfigurationSection(controller: GeminiKeySettingsController?) {
     SettingsSectionCard(SettingsSection.GeminiConfiguration.title) {
+        if (controller == null) {
+            SettingsPlaceholder(
+                SettingsScreenText.PLACEHOLDER_BADGE,
+                SettingsScreenText.GEMINI_UNAVAILABLE,
+            )
+        } else {
+            GeminiApiKeySection(controller)
+        }
+    }
+}
+
+@Composable
+private fun ReaderSettingsSection(settings: ReaderSettings, onChange: (ReaderSettings) -> Unit) {
+    SettingsSectionCard(SettingsSection.ReaderPreferences.title) {
+        ReaderSlider(
+            "Font size",
+            settings.fontSizeSp,
+            ReaderSettings.FONT_SIZE_RANGE,
+            "sp",
+        ) { onChange(settings.copy(fontSizeSp = it)) }
+        ReaderSlider(
+            "Margin",
+            settings.marginDp,
+            ReaderSettings.MARGIN_RANGE,
+            "dp",
+        ) { onChange(settings.copy(marginDp = it)) }
+        ReaderSlider(
+            "Paragraph spacing",
+            settings.paragraphSpacingDp,
+            ReaderSettings.PARAGRAPH_SPACING_RANGE,
+            "dp",
+        ) { onChange(settings.copy(paragraphSpacingDp = it)) }
+        Text("Reader theme", style = MaterialTheme.typography.bodyMedium)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            ReaderThemeChip("System", ReaderTheme.SYSTEM, settings, onChange)
+            ReaderThemeChip("Light", ReaderTheme.LIGHT, settings, onChange)
+            ReaderThemeChip("Dark", ReaderTheme.DARK, settings, onChange)
+        }
+    }
+}
+
+@Composable
+private fun ReaderThemeChip(
+    label: String,
+    theme: ReaderTheme,
+    settings: ReaderSettings,
+    onChange: (ReaderSettings) -> Unit,
+) {
+    FilterChip(
+        selected = settings.theme == theme,
+        onClick = { onChange(settings.copy(theme = theme)) },
+        label = { Text(label) },
+    )
+}
+
+@Composable
+private fun ReaderSlider(
+    label: String,
+    value: Int,
+    range: IntRange,
+    unit: String,
+    onChange: (Int) -> Unit,
+) {
+    Column(Modifier.fillMaxWidth()) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(label, style = MaterialTheme.typography.bodyMedium)
+            Text("$value $unit", style = MaterialTheme.typography.bodyMedium)
+        }
+        Slider(
+            value = value.toFloat(),
+            onValueChange = { onChange(it.roundToInt()) },
+            valueRange = range.first.toFloat()..range.last.toFloat(),
+            steps = range.last - range.first - 1,
+        )
+    }
+}
+
+@Composable
+private fun BrowserSettingsSection(prefs: UiPreferences) {
+    SettingsSectionCard(SettingsSection.BrowserPreferences.title) {
+        SettingsInfoRow(
+            "Novel shortcuts",
+            "${prefs.getShortcuts().size} saved",
+        )
+        SettingsNote(SettingsScreenText.BROWSER_PREFS_NOTE)
         SettingsPlaceholder(
-            badge = SettingsScreenText.PLACEHOLDER_BADGE,
-            text = SettingsScreenText.GEMINI_PLACEHOLDER,
+            SettingsScreenText.PLACEHOLDER_BADGE,
+            SettingsScreenText.SAFE_MODE_UNAVAILABLE,
         )
     }
 }
@@ -185,8 +267,8 @@ private fun GeminiConfigurationSection() {
 private fun TranslationBehaviorSection() {
     SettingsSectionCard(SettingsSection.TranslationBehavior.title) {
         SettingsPlaceholder(
-            badge = SettingsScreenText.PLACEHOLDER_BADGE,
-            text = SettingsScreenText.BEHAVIOR_PLACEHOLDER,
+            SettingsScreenText.PLACEHOLDER_BADGE,
+            SettingsScreenText.BEHAVIOR_PLACEHOLDER,
         )
     }
 }
@@ -194,12 +276,9 @@ private fun TranslationBehaviorSection() {
 @Composable
 private fun AboutSection(versionName: String?) {
     SettingsSectionCard(SettingsSection.About.title) {
+        Text(SettingsScreenText.APP_NAME, style = MaterialTheme.typography.titleMedium)
         Text(
-            text = SettingsScreenText.APP_NAME,
-            style = MaterialTheme.typography.titleMedium,
-        )
-        Text(
-            text = SettingsScreenText.versionLabel(versionName),
+            SettingsScreenText.versionLabel(versionName),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

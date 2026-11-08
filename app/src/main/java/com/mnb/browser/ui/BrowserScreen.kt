@@ -60,10 +60,10 @@ import com.mnb.browser.web.WebViewController
 import com.mnb.browser.ui.premium.AddressBarOverlay
 import com.mnb.browser.ui.premium.BottomBar
 import com.mnb.browser.ui.premium.NewTabPage
-import com.mnb.browser.ui.premium.PremiumSettings
 import com.mnb.browser.ui.library.BookmarksScreen
 import com.mnb.browser.ui.library.HistoryScreen
 import com.mnb.browser.ui.premium.UiPreferences
+import com.mnb.browser.ui.settings.SettingsScreen
 import com.mnb.browser.ui.tabs.TabSwitcher
 
 @Composable
@@ -79,6 +79,7 @@ fun BrowserScreen(
     uiPreferences: UiPreferences,
     tabManager: TabManager,
     library: BrowserLibrary,
+    versionName: String? = null,
 ) {
     val state = stateManager.state
     val extractionUi = extractionState.state
@@ -250,9 +251,12 @@ fun BrowserScreen(
             }
 
             if (settingsOpen && !readerOpen && !extractionOpen) {
-                PremiumSettings(
+                SettingsScreen(
                     prefs = uiPreferences,
-                    onClose = { settingsOpen = false },
+                    readerSettingsRepository = readerSettings,
+                    geminiKeySettings = LocalGeminiKeySettings.current,
+                    onBack = { settingsOpen = false },
+                    versionName = versionName,
                 )
             }
 
