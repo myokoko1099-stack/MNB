@@ -65,7 +65,11 @@ class ReaderInstantTranslationController(
         start(content)
     }
 
-    fun start(content: ExtractedContent): StartResult {
+    fun start(
+        content: ExtractedContent,
+        isCancelled: () -> Boolean = { false },
+        onFinished: (ReaderTranslationState) -> Unit = {},
+    ): StartResult {
         val open = holder.current ?: return StartResult.NO_CHAPTER_OPEN
         val identity = open.identity ?: return StartResult.NO_IDENTITY
         if (identity.sourceUrl != content.url) return StartResult.CONTENT_MISMATCH
@@ -111,9 +115,11 @@ class ReaderInstantTranslationController(
 
         if (!holder.update(chapterId, ReaderTranslationState.Processing())) return StartResult.NO_CHAPTER_OPEN
         try {
-            executor.execute { work(chapterId, binding, request, backend) }
+            executor.execute { work(chapterId, binding, request, backend, isCancelled, onFinished) }
         } catch (e: Exception) {
-            holder.update(chapterId, ReaderTranslationState.Failed(ReaderTranslationFailure.UNKNOWN, canRetry = true))
+            val failed = ReaderTranslationState.Failed(ReaderTranslationFailure.UNKNOWN, canRetry = true)
+            holder.update(chapterId, failed)
+            onFinished(failed)
         }
         return StartResult.STARTED
     }
@@ -143,7 +149,14 @@ class ReaderInstantTranslationController(
         }
     }
 
-    private fun work(chapterId: ChapterId, binding: NovelBinding, request: TranslateChapterRequest, backend: TranslationBackend) {
+    private fun work(
+        chapterId: ChapterId,
+        binding: NovelBinding,
+        request: TranslateChapterRequest,
+        backend: TranslationBackend,
+        isCancelled: () -> Boolean,
+        onFinished: (ReaderTranslationState) -> Unit,
+    ) {
         val state = try {
             when (backend.novels.ensure(binding, clock())) {
                 NovelEnsureResult.SOURCE_LANGUAGE_MISMATCH ->
@@ -151,13 +164,14 @@ class ReaderInstantTranslationController(
                 NovelEnsureResult.FAILED ->
                     ReaderTranslationState.Failed(ReaderTranslationFailure.STORAGE, canRetry = true)
                 NovelEnsureResult.READY ->
-                    mapOutcome(backend.runner.run(request, clock()) { !isOpen(chapterId) })
+                    mapOutcome(backend.runner.run(request, clock()) { !isOpen(chapterId) || isCancelled() })
             }
         } catch (e: Exception) {
             ReaderTranslationState.Failed(ReaderTranslationFailure.UNKNOWN, canRetry = true)
         }
-        // Ignored (returns false) when the reader has moved to another chapter meanwhile.
-        holder.update(chapterId, state)
+        // Ignored when either the reader chapter or its originating page operation is no longer current.
+        if (isOpen(chapterId) && !isCancelled()) holder.update(chapterId, state)
+        onFinished(state)
     }
 
     private fun isOpen(chapterId: ChapterId): Boolean = holder.current?.identity?.chapterId == chapterId

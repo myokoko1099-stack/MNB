@@ -101,6 +101,15 @@ class ReaderModeController {
         return true
     }
 
+    /** A foreground operation must not keep publishing after its tab is switched away from. */
+    @Synchronized
+    fun onTabDeactivated(tabId: String) {
+        val entry = entries[tabId] ?: return
+        entry.token?.cancel()
+        entry.token = null
+        entry.state = ReaderModeState.OFF
+    }
+
     /** Returns false for a late result from another document or a cancelled request. */
     @Synchronized
     fun accepts(tabId: String, session: PageSession, token: CancellationToken): Boolean {

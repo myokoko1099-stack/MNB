@@ -101,6 +101,9 @@ class WebViewController(
      */
     var visitListener: ((tabId: String, url: String?, title: String?) -> Unit)? = null
 
+    /** Called when a tab stops being active so page-scoped foreground work can be invalidated. */
+    var tabDeactivatedListener: ((tabId: String) -> Unit)? = null
+
     private val views = HashMap<String, WebView>()
     private val stores = HashMap<String, WebSessionStore>()
     private var activeId: String? = null
@@ -231,6 +234,7 @@ class WebViewController(
     private fun activate(tabId: String, view: WebView, fallbackUrl: String) {
         val previousId = activeId
         if (previousId != null) {
+            if (previousId != tabId) tabDeactivatedListener?.invoke(previousId)
             views[previousId]?.let { previous ->
                 saveSession(previousId, previous)
                 previous.onPause()

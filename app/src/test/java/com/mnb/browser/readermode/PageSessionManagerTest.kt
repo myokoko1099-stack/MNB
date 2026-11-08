@@ -59,6 +59,39 @@ class PageSessionManagerTest {
     }
 
     @Test
+    fun webViewReloadCallbackSequenceAdvancesIdentityExactlyOnce() {
+        val manager = manager()
+        val initial = manager.onPageStarted("tab-a", "https://example.test/story")
+        manager.onPageFinished("tab-a", "https://example.test/story")
+
+        val reloadStarted = manager.onPageStarted("tab-a", "https://example.test/story")
+        val reloadHistory = manager.onHistoryUpdated("tab-a", "https://example.test/story", true)
+        val reloadFinished = manager.onPageFinished("tab-a", "https://example.test/story")
+
+        assertEquals(2L, reloadStarted.navGeneration)
+        assertTrue(reloadStarted.sameDocumentAs(reloadHistory))
+        assertTrue(reloadStarted.sameDocumentAs(reloadFinished))
+        assertEquals(2L, reloadFinished.navGeneration)
+        assertTrue(!initial.sameDocumentAs(reloadFinished))
+    }
+
+    @Test
+    fun repeatedReloadHistoryAndFinishedCallbacksAreIdempotent() {
+        val manager = manager()
+        val started = manager.onPageStarted("tab-a", "https://example.test/story")
+        val history1 = manager.onHistoryUpdated("tab-a", "https://example.test/story", true)
+        val history2 = manager.onHistoryUpdated("tab-a", "https://example.test/story", true)
+        val finished1 = manager.onPageFinished("tab-a", "https://example.test/story")
+        val finished2 = manager.onPageFinished("tab-a", "https://example.test/story")
+
+        assertTrue(started.sameDocumentAs(history1))
+        assertTrue(started.sameDocumentAs(history2))
+        assertTrue(started.sameDocumentAs(finished1))
+        assertTrue(started.sameDocumentAs(finished2))
+        assertEquals(1L, finished2.navGeneration)
+    }
+
+    @Test
     fun tabSwitchingPreservesEachTabSession() {
         val manager = manager()
         val a = manager.onPageStarted("tab-a", "https://a.test/")

@@ -101,4 +101,58 @@ class ReaderModeControllerTest {
         assertEquals(ReaderModeState.OFF, controller.state("tab-a"))
         assertFalse(controller.accepts("tab-a", old, token))
     }
+
+    @Test
+    fun pendingExtractionIsCancelledOnTabSwitchAndLateResultCannotPublish() {
+        val controller = ReaderModeController()
+        val pageA = session("tab-a")
+        val pageB = session("tab-b")
+        controller.onPageSessionChanged("tab-a", pageA)
+        controller.onPageSessionChanged("tab-b", pageB)
+        val extractionToken = controller.beginExtraction("tab-a", pageA)!!
+
+        controller.onTabDeactivated("tab-a")
+
+        assertTrue(extractionToken.isCancelled)
+        assertFalse(controller.accepts("tab-a", pageA, extractionToken))
+        assertFalse(controller.markReady("tab-a", pageA, extractionToken))
+        assertEquals(ReaderModeState.OFF, controller.state("tab-a"))
+        assertEquals(ReaderModeState.OFF, controller.state("tab-b"))
+    }
+
+    @Test
+    fun cancellationTokenStopsTheWorkAtTheAsynchronousBoundary() {
+        val controller = ReaderModeController()
+        val page = session()
+        controller.onPageSessionChanged("tab-a", page)
+        val token = controller.beginExtraction("tab-a", page)!!
+        var operationRan = false
+
+        // Mirrors the production callback boundary: cancelled or stale work never invokes its result path.
+        if (controller.accepts("tab-a", page, token)) operationRan = true
+        assertTrue(operationRan)
+        controller.cancel("tab-a")
+        operationRan = false
+        if (controller.accepts("tab-a", page, token)) operationRan = true
+
+        assertFalse(operationRan)
+    }
+
+    @Test
+    fun navigationWhileExtractionPendingRejectsTheOldResultAndLeavesOtherTabUntouched() {
+        val controller = ReaderModeController()
+        val pageA = session("tab-a")
+        val pageB = session("tab-b")
+        controller.onPageSessionChanged("tab-a", pageA)
+        controller.onPageSessionChanged("tab-b", pageB)
+        val tokenA = controller.beginExtraction("tab-a", pageA)!!
+        val tokenB = controller.beginExtraction("tab-b", pageB)!!
+
+        controller.onPageSessionChanged("tab-a", session("tab-a", generation = 2L))
+
+        assertTrue(tokenA.isCancelled)
+        assertFalse(controller.accepts("tab-a", pageA, tokenA))
+        assertTrue(controller.accepts("tab-b", pageB, tokenB))
+        assertEquals(ReaderModeState.EXTRACTING, controller.state("tab-b"))
+    }
 }

@@ -27,22 +27,40 @@ class PageSessionManager(
 ) {
     private val sessions = LinkedHashMap<String, PageSession>()
     private val generations = HashMap<String, Long>()
+    /** WebView commonly reports a reload in history callbacks after onPageStarted. */
+    private val startedReloads = HashMap<String, String>()
 
     @Synchronized
     fun current(tabId: String): PageSession? = sessions[tabId]
 
     /** A main-frame page start always begins a new document, including same-URL reloads. */
     @Synchronized
-    fun onPageStarted(tabId: String, url: String?): PageSession = beginNewDocument(tabId, url)
+    fun onPageStarted(tabId: String, url: String?): PageSession {
+        val normalized = normalizeUrl(url)
+        startedReloads[tabId] = normalized
+        return beginNewDocument(tabId, url)
+    }
 
     /** A reload is a new document even if the URL is unchanged. */
     @Synchronized
-    fun onReload(tabId: String, url: String?): PageSession = beginNewDocument(tabId, url)
+    fun onReload(tabId: String, url: String?): PageSession {
+        startedReloads.remove(tabId)
+        return beginNewDocument(tabId, url)
+    }
 
     /** A normal history callback without reload is same-document until page-start says otherwise. */
     @Synchronized
     fun onHistoryUpdated(tabId: String, url: String?, isReload: Boolean): PageSession {
-        if (isReload) return beginNewDocument(tabId, url)
+        if (isReload) {
+            val normalized = normalizeUrl(url)
+            // Android WebView may emit onPageStarted followed by doUpdateVisitedHistory(true)
+            // for the *same* reload. The page-start already established its new identity.
+            if (startedReloads[tabId] == normalized && sessions[tabId]?.normalizedUrl == normalized) {
+                return sessions.getValue(tabId)
+            }
+            startedReloads.remove(tabId)
+            return beginNewDocument(tabId, url)
+        }
         val existing = sessions[tabId]
         if (existing == null) return beginNewDocument(tabId, url)
         val updated = existing.copy(normalizedUrl = normalizeUrl(url))
@@ -53,6 +71,7 @@ class PageSessionManager(
     /** Duplicate page-finished callbacks must not create another document identity. */
     @Synchronized
     fun onPageFinished(tabId: String, url: String?): PageSession {
+        startedReloads.remove(tabId)
         val existing = sessions[tabId]
         if (existing != null) return existing
         return beginNewDocument(tabId, url)
@@ -74,12 +93,14 @@ class PageSessionManager(
     fun closeTab(tabId: String) {
         sessions.remove(tabId)
         generations.remove(tabId)
+        startedReloads.remove(tabId)
     }
 
     @Synchronized
     fun clear() {
         sessions.clear()
         generations.clear()
+        startedReloads.clear()
     }
 
     private fun beginNewDocument(tabId: String, url: String?): PageSession {
