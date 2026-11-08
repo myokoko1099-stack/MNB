@@ -65,7 +65,9 @@ async function fresh(html) {
   return page;
 }
 async function evaluate(page, payload = {}) {
-  return page.evaluate(script => (0, eval)(script), invoke(payload));
+  const result = await page.evaluate(script => (0, eval)(script), invoke(payload));
+  if (!payload.op && result?.status === 'error') throw new Error(`DOM extraction returned ${JSON.stringify(result)}`);
+  return result;
 }
 
 for (const [name, html] of fixtures) {
