@@ -52,6 +52,7 @@ class PageSessionManagerTest {
     fun historyCallbackWithReloadCreatesNewIdentity() {
         val manager = manager()
         val first = manager.onPageStarted("tab-a", "https://example.test/story")
+        manager.onPageFinished("tab-a", "https://example.test/story")
         val reloaded = manager.onHistoryUpdated("tab-a", "https://example.test/story", true)
 
         assertTrue(!first.sameDocumentAs(reloaded))
