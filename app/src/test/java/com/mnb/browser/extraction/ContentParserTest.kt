@@ -156,4 +156,50 @@ class ContentParserTest {
         assertTrue(state is ExtractionState.Error)
         assertTrue((state as ExtractionState.Error).message.contains("boom"))
     }
+
+    @Test fun parsesAnchorsConfidenceTruncationAndDocumentIdentity() {
+        val record = JSONObject().put("index", 7).put("textHash", "a1b2c3d4")
+            .put("originalText", long1).put("headingLevel", 2).put("contentKind", "heading")
+        val raw = JSONObject().put("sessionToken", "session-a").put("documentToken", "document-a")
+            .put("tabId", "tab-a").put("navGeneration", 9L)
+            .put("status", "success").put("contentType", "chapter").put("chapterConfidence", 0.83)
+            .put("truncation", JSONObject().put("truncated", true).put("totalCharacters", 62))
+            .put("paragraphs", JSONArray().put(record)).toString()
+        val state = ContentParser.parse(raw, "url", "session-a", "document-a", "tab-a", 9L)
+        assertTrue("expected Success but was $state", state is ExtractionState.Success)
+        val content = (state as ExtractionState.Success).content
+        assertEquals(7, content.paragraphs.single().index)
+        assertEquals("a1b2c3d4", content.paragraphs.single().textHash)
+        assertEquals("heading", content.paragraphs.single().contentKind)
+        assertEquals(0.83, content.chapterConfidence, 0.0001)
+        assertTrue(content.truncated)
+        assertEquals(62, content.totalExtractedCharacters)
+        assertEquals("session-a", content.sessionToken)
+        assertEquals("document-a", content.documentToken)
+        assertEquals("tab-a", content.tabId)
+        assertEquals(9L, content.navGeneration)
+        assertEquals("chapter", content.contentType)
+    }
+
+    @Test fun rejectsWrongSessionAndDocumentTokens() {
+        val raw = JSONObject().put("sessionToken", "session-a").put("documentToken", "document-a")
+            .put("tabId", "tab-a").put("navGeneration", 9L)
+            .put("paragraphs", JSONArray().put(JSONObject().put("originalText", long1))).toString()
+        assertTrue(ContentParser.parse(raw, "url", "session-b", "document-a") is ExtractionState.Error)
+        assertTrue(ContentParser.parse(raw, "url", "session-a", "document-b") is ExtractionState.Error)
+        assertTrue(ContentParser.parse(raw, "url", expectedTabId = "tab-b") is ExtractionState.Error)
+        assertTrue(ContentParser.parse(raw, "url", expectedNavGeneration = 10L) is ExtractionState.Error)
+    }
+
+    @Test fun malformedParagraphEntriesAreSkippedAndInputCountIsBounded() {
+        val array = JSONArray().put(JSONObject().put("originalText", long1))
+        for (i in 0 until ContentParser.MAX_PARAGRAPHS + 5) {
+            array.put(JSONObject().put("index", i).put("originalText", "Unique paragraph body number $i with enough text."))
+        }
+        array.put(JSONObject().put("originalText", long2))
+        val state = ContentParser.parse(JSONObject().put("paragraphs", array).toString(), "url")
+        assertTrue(state is ExtractionState.Success)
+        assertEquals(ContentParser.MAX_PARAGRAPHS, (state as ExtractionState.Success).content.paragraphs.size)
+        assertTrue((state as ExtractionState.Success).content.truncated)
+    }
 }

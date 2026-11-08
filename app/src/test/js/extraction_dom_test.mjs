@@ -1,6 +1,4 @@
-// DOM-level test of the injected JavaScript (ExtractionScript.kt) in a real Chromium.
-// Not part of the Gradle/CI run. Usage:  node extraction_dom_test.mjs
-// Requires: npm i playwright (and a Chromium install).
+// CI DOM tests for DomReaderScript.kt. Playwright is installed only in the GitHub Actions job.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -8,147 +6,202 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
-const { chromium } = require(process.env.PLAYWRIGHT_PATH || 'playwright');
-
+const { chromium } = require('playwright');
 const here = dirname(fileURLToPath(import.meta.url));
-const kt = readFileSync(join(here, '../../main/java/com/mnb/browser/extraction/ExtractionScript.kt'), 'utf8');
-const SCRIPT = kt.split('"""')[1];
+const kt = readFileSync(join(here, '../../main/java/com/mnb/browser/extraction/DomReaderScript.kt'), 'utf8');
+const marker = '__MNB_DOM_READER_PAYLOAD__';
+const start = kt.indexOf('private val SOURCE = """');
+assert.ok(start >= 0, 'Kotlin DOM script source marker is present');
+const from = kt.indexOf('\n', start) + 1;
+const end = kt.indexOf('\n""".trimIndent()', from);
+assert.ok(end > from, 'Kotlin DOM script has a closing delimiter');
+const source = kt.slice(from, end).split('\n').map(line => line.replace(/^ {8}/, '')).join('\n');
+assert.ok(source.includes(marker), 'DOM script has its payload placeholder');
+const base = { sessionToken: 'test-session-1', documentToken: 'test-document-1', tabId: 'test-tab', navGeneration: 12 };
+const invoke = (payload = {}) => source.replace(marker, JSON.stringify({ ...base, ...payload }));
 
-const NOVEL = `<!doctype html><html><head><title>Novel Site - Chapter 5</title></head><body>
-<header><a href="/">Home</a> <a href="/list">Novels</a></header>
-<nav class="main-menu"><a href="/a">Genres</a><a href="/b">Rankings</a></nav>
-<div class="ads adsbygoogle">BUY NOW!!! Advertisement</div>
-<div id="sidebar"><p>Popular novels sidebar text that is long enough to look like a real paragraph of text.</p></div>
-<main><article>
-  <h1>အခန်း ၅ - ခရီးစတင်ခြင်း</h1>
-  <h2>Part One</h2>
-  <p>မင်္ဂလာပါ။ ဒီနေ့ ကျွန်တော် ခရီးထွက်မယ်။ နေရောင်က လင်းလင်းထိန်ထိန် ရှိနေတယ်။</p>
-  <p>   Second   paragraph with   odd   spacing and enough text to count as content here.  </p>
-  <p style="display:none">Hidden paragraph that must never appear in the result at all.</p>
-  <p hidden>Another hidden paragraph that must never appear in the result either way.</p>
-  <p>Second paragraph with odd spacing and enough text to count as content here.</p>
-  <p>Third paragraph, a unique one, containing different words to stay in the output.</p>
-  <button>Next Chapter</button>
-  <p>Third paragraph, a unique one, containing different words to stay in the output.</p>
-  <p>“Yes.”</p><p>“Yes.”</p><p>Narration between.</p><p>“Yes.”</p>
-  <div class="comments"><p>Great chapter!!! Thanks for the update, I really loved reading this one today.</p></div>
-</article></main>
-<footer><p>Copyright 2026 Novel Site. All rights reserved. Contact us for more information.</p></footer>
-</body></html>`;
+const fixtures = [
+  ['Royal Road-like chapter', `<!doctype html><title>Book | Royal Road</title><body>
+    <nav><p>Browse novels and ranking links belong to navigation only.</p></nav>
+    <aside><p>This long sidebar recommendation is unrelated to the chapter content.</p></aside>
+    <main><article id="chapter-content"><h1>Chapter 12: The Crossing</h1>
+      <p>The first chapter paragraph has enough useful prose to be part of the story.</p>
+      <p>The second chapter paragraph includes <em>inline emphasis</em> and remains one block.</p>
+      <p style="display:none">Hidden story text must not be included in the result.</p>
+      <div class="advertisement">Sponsored promotion should be filtered.</div>
+    </article></main></body>`],
+  ['Wattpad-like chapter', `<!doctype html><title>Story</title><body><div data-testid="story-content">
+    <h2>Part One</h2><p>Wattpad-shaped story text is still found without a site selector.</p>
+    <p>A second readable chapter paragraph continues the current scene.</p></div>
+    <div class="sidebar"><p>Unrelated sidebar text is excluded from the extraction.</p></div></body>`],
+  ['Wuxiaworld-like article', `<!doctype html><title>Chapter 7</title><body><main role="main"><article>
+    <h1>第七章</h1><p>这是一个包含足够长度的中文段落，用来验证 CJK 文字仍然完整保留。</p>
+    <p>Another long paragraph stays in the chapter body and not the site navigation.</p>
+    </article></main><footer>Copyright and site links are not chapter text.</footer></body>`],
+  ['Project Gutenberg-like book', `<!doctype html><title>Book</title><body><div id="content">
+    <h2>CHAPTER I</h2><p>It was the best of times, it was the worst of times, and the prose continues here.</p>
+    <p>Book text remains available from a generic document structure.</p></div></body>`],
+  ['Standard Ebooks-like XHTML', `<!doctype html><title>Book</title><body><main><section>
+    <h3>Chapter II</h3><p>The chapter begins with a sufficiently long paragraph of readable narrative prose.</p>
+    <p>A second paragraph completes this standards-oriented ebook fixture.</p></section></main></body>`],
+  ['NovelDex-like content wrapper', `<!doctype html><title>NovelDex page</title><body><div class="reader-container"><div class="chapter-content">
+    <h1>အခန်း ၅</h1><p>မင်္ဂလာပါ။ ဒီနေ့ ကျွန်တော် ခရီးထွက်မယ်။ ဇာတ်လမ်းစာသားကို မူရင်းအတိုင်း ထိန်းသိမ်းပါ။</p>
+    <p>Myanmar characters with zero width space: ကမ္​ဘာကြီး နှင့် မင်္ဂလာပါ။</p></div></div></body>`],
+  ['generic br-separated chapter', `<!doctype html><title>Simple chapter</title><body><main><div id="chapter">
+    First line of story text is long enough to be independently anchored here.<br>
+    Second line of story text is also long enough to be independently anchored.
+    </div></main></body>`],
+];
 
-const BR_PAGE = `<!doctype html><html><head><title>BR page</title></head><body>
-<div id="content">Line one of the story, long enough to count as a paragraph of text.<br><br>
-Line two of the story, also long enough to be treated as its own paragraph.<br>
-<span>Line three has <b>inline bold</b> and <i>italic</i> parts inside the same paragraph line.</span></div>
-</body></html>`;
-
-const FORM_PAGE = `<!doctype html><html><head><title>Form wrap</title></head><body><form id="f">
-<div class="wrap has-sidebar"><div class="content">
-<p>First paragraph inside an ASP.NET style form wrapper, which must still be extracted.</p>
-<p>Second paragraph inside the form wrapper, also long enough to be considered content.</p>
-</div></div><input type="submit" value="Go"></form></body></html>`;
-
-const EMPTY_PAGE = `<!doctype html><html><head><title>Empty</title></head><body>
-<nav><a href="/x">Menu</a></nav><header>Site</header><footer>Foot</footer><button>Click</button></body></html>`;
-
-
-const BLOCK_SPANS = `<!doctype html><html><head><title>Book - WebNovel</title></head><body>
-<div class="g_wrap"><header><h1>Book Name Here</h1></header>
-<div class="cha-content"><h3 class="cha-tit"><span style="display:block">Chapter 1</span><span style="display:block">Chapter 1: Prologue</span></h3>
-<p>This was definitely not a game. Of course, it wasn't a dream, either, was it?</p>
-<p>But her voice definitely resounded within my head, loud and clear.</p></div></div></body></html>`;
-
-const BOOK_H1 = `<!doctype html><html><head><title>Site</title></head><body>
-<main><h1>Book Name As H1</h1><div class="chapter-title">Chapter 7: The Gate</div>
-<p>First long paragraph of the story which is certainly long enough to count here.</p>
-<p>Second long paragraph of the story which is certainly long enough to count too.</p></main></body></html>`;
-
-const NO_TITLE = `<!doctype html><html><head><title>Site</title></head><body>
-<div class="c"><p>Chapter 12 - Return</p><p>First long paragraph of the story which is certainly long enough to count here.</p></div></body></html>`;
-
-const BARE_LABEL_A = `<!doctype html><html><head><title>Book</title></head><body><div class="c">
-<div style="display:block">Chapter 1</div><div>Chapter 1: Prologue</div><div>Part 0: Prologue</div>
-<p>This was definitely not a game. Of course, it wasn't a dream, either, was it?</p></div></body></html>`;
-const BARE_LABEL_B = `<!doctype html><html><head><title>Book</title></head><body><div class="c">
-<span style="display:block">Chapter 1</span><span style="display:block">Nightmare Begins</span>
-<p>A frail-looking young man with pale skin and dark circles under his eyes sat there.</p></div></body></html>`;
-
-const SHORT_TITLE = `<!doctype html><html><head><title>Book</title></head><body><div class="c">
-<p>Chapter 5 Gate</p><p>Yes, he said quietly, and it was enough for them both to leave at once.</p></div></body></html>`;
-
-const browser = await chromium.launch();
-const results = [];
-async function run(name, html, check) {
+const browser = await chromium.launch({ headless: true });
+const passed = [];
+async function test(name, body) {
+  try { await body(); passed.push(['PASS', name]); }
+  catch (error) { passed.push(['FAIL', `${name}: ${error.message}`]); }
+}
+async function fresh(html) {
   const page = await browser.newPage();
   await page.setContent(html);
-  const r = await page.evaluate(SCRIPT);
-  await page.close();
-  try { check(r); results.push(['PASS', name]); }
-  catch (e) { results.push(['FAIL', name + ' -> ' + e.message]); console.error(JSON.stringify(r, null, 1)); }
+  return page;
 }
-const texts = r => r.paragraphs.map(p => p.t);
+async function evaluate(page, payload = {}) {
+  return page.evaluate(script => (0, eval)(script), invoke(payload));
+}
 
-await run('novel: title/chapter/url fields', NOVEL, r => {
-  assert.equal(r.pageTitle, 'Novel Site - Chapter 5');
-  assert.equal(r.chapterTitle, 'အခန်း ၅ - ခရီးစတင်ခြင်း');
-  assert.ok(r.url.length > 0);
-});
-await run('novel: removes nav/ads/header/footer/button/hidden/sidebar/comments', NOVEL, r => {
-  const all = texts(r).join('\n');
-  for (const bad of ['BUY NOW', 'Genres', 'Home', 'Novels', 'Next Chapter', 'Hidden paragraph', 'Another hidden', 'Copyright', 'Popular novels', 'Great chapter'])
-    assert.ok(!all.includes(bad), 'leaked: ' + bad);
-});
-await run('novel: keeps order, headings and original Burmese text', NOVEL, r => {
-  const t = texts(r);
-  assert.deepEqual(r.paragraphs.slice(0, 2).map(p => [p.t, p.h]), [['အခန်း ၅ - ခရီးစတင်ခြင်း', 1], ['Part One', 2]]);
-  assert.equal(t[2], 'မင်္ဂလာပါ။ ဒီနေ့ ကျွန်တော် ခရီးထွက်မယ်။ နေရောင်က လင်းလင်းထိန်ထိန် ရှိနေတယ်။');
-  assert.ok(t.indexOf('Second paragraph with odd spacing and enough text to count as content here.') < t.indexOf('Third paragraph, a unique one, containing different words to stay in the output.'));
-});
-await run('novel: whitespace collapsed by script', NOVEL, r => {
-  assert.ok(texts(r).includes('Second paragraph with odd spacing and enough text to count as content here.'));
-});
-await run('br-separated text becomes separate paragraphs, inline kept together', BR_PAGE, r => {
-  const t = texts(r);
-  assert.equal(t.length, 3, JSON.stringify(t));
-  assert.ok(t[2].includes('inline bold') && t[2].includes('italic'));
-});
-await run('form wrapper + has-sidebar class still extracts', FORM_PAGE, r => {
-  assert.equal(texts(r).length, 2, JSON.stringify(texts(r)));
-});
-await run('page with only chrome yields no paragraphs', EMPTY_PAGE, r => {
-  assert.equal(r.paragraphs.length, 0, JSON.stringify(r.paragraphs));
-});
+for (const [name, html] of fixtures) {
+  await test(`${name}: extracts paragraphs, headings, and stable hashes`, async () => {
+    const page = await fresh(html);
+    const result = await evaluate(page);
+    assert.equal(result.status, 'success');
+    assert.equal(result.sessionToken, base.sessionToken);
+    assert.equal(result.documentToken, base.documentToken);
+    assert.equal(result.tabId, base.tabId);
+    assert.equal(result.navGeneration, base.navGeneration);
+    assert.ok(result.paragraphs.length >= 2);
+    assert.ok(result.paragraphs.every(p => p.index >= 0 && /^[0-9a-f]{8}$/.test(p.textHash)));
+    assert.ok(result.chapterConfidence >= 0 && result.chapterConfidence <= 1);
+    await page.close();
+  });
+}
 
-await run('display:block spans are split into separate lines (no "Chapter 1Chapter 1")', BLOCK_SPANS, r => {
-  const t = texts(r);
-  assert.equal(t[0], 'Chapter 1', JSON.stringify(t));
-  assert.equal(t[1], 'Chapter 1: Prologue');
-  assert.ok(!t.some(x => x.includes('Chapter 1Chapter')));
-});
-await run('chapter title comes from the title element, not the book h1 in header', BLOCK_SPANS, r => {
-  assert.equal(r.chapterTitle, 'Chapter 1 Chapter 1: Prologue');
-  assert.ok(!r.chapterTitle.includes('Book Name'));
-});
-await run('chapter title prefers .chapter-title over a bare h1', BOOK_H1, r => {
-  assert.equal(r.chapterTitle, 'Chapter 7: The Gate');
-});
-await run('chapter title falls back to a leading "Chapter N" line', NO_TITLE, r => {
-  assert.equal(r.chapterTitle, 'Chapter 12 - Return');
+await test('filters hidden, navigation, sidebar, ads, links and duplicate paragraphs', async () => {
+  const page = await fresh(`<!doctype html><body><nav><a href="/x">Genres and directory links</a></nav>
+    <aside><p>Popular novels not part of the chapter and should not be returned here.</p></aside>
+    <main><article><h1>Chapter 1</h1><p>First unique paragraph with enough length for extraction.</p>
+    <p>Second unique paragraph with enough length for extraction.</p>
+    <p>Second unique paragraph with enough length for extraction.</p>
+    <p>“Yes.”</p><p>He nodded and walked away from the door slowly.</p><p>“Yes.”</p>
+    <p hidden>Hidden chapter paragraph must be omitted.</p><div class="adsbygoogle">BUY A BOOK NOW</div></article></main></body>`);
+  const r = await evaluate(page); const text = r.paragraphs.map(p => p.originalText).join('\n');
+  assert.equal(r.paragraphs.filter(p => p.originalText.startsWith('Second unique')).length, 1);
+  assert.equal(r.paragraphs.filter(p => p.originalText === '“Yes.”').length, 2);
+  for (const excluded of ['Genres', 'Popular novels', 'Hidden chapter', 'BUY A BOOK']) assert.ok(!text.includes(excluded));
+  await page.close();
 });
 
-await run('bare "Chapter 1" is completed by the following line that repeats it', BARE_LABEL_A, r => {
-  assert.equal(r.chapterTitle, 'Chapter 1: Prologue');
-});
-await run('bare "Chapter 1" is joined with a following title line', BARE_LABEL_B, r => {
-  assert.equal(r.chapterTitle, 'Chapter 1 Nightmare Begins');
+await test('paragraph indices stay stable when lazy content is appended and extracted again', async () => {
+  const page = await fresh(`<!doctype html><body><main><article><p>Original paragraph has enough text for the chapter reader.</p>
+    <p>Second original paragraph has enough text for the chapter reader.</p></article></main></body>`);
+  const first = await evaluate(page); const old = first.paragraphs.map(p => p.index);
+  await page.evaluate(() => { const p = document.createElement('p'); p.textContent = 'Lazy paragraph added later also contains enough useful chapter text.'; document.querySelector('article').appendChild(p); });
+  await page.waitForTimeout(20);
+  const next = await evaluate(page);
+  assert.deepEqual(next.paragraphs.slice(0, 2).map(p => p.index), old);
+  assert.ok(next.paragraphs.some(p => p.originalText.startsWith('Lazy paragraph')));
+  assert.ok(next.observer.mutationCount > 0);
+  await page.close();
 });
 
-await run('a full short title like "Chapter 5 Gate" is not extended', SHORT_TITLE, r => {
-  assert.equal(r.chapterTitle, 'Chapter 5 Gate');
+await test('br-separated lines receive distinct text-node anchors', async () => {
+  const page = await fresh(`<!doctype html><body><main><div id="lines">First line of text is long enough to form its own paragraph.<br>
+    Second line of text is also long enough to form a separate paragraph.<br>
+    Third line of text remains a separate readable paragraph.</div></main></body>`);
+  const r = await evaluate(page);
+  assert.equal(r.paragraphs.filter(p => p.originalText.includes('line of text')).length, 3);
+  assert.equal(new Set(r.paragraphs.map(p => p.index)).size, r.paragraphs.length);
+  await page.close();
+});
+
+await test('resolves anchors and reports stale session, wrong document, changed and disconnected nodes', async () => {
+  const page = await fresh(`<!doctype html><body><main><p id="one">A stable paragraph with enough readable content.</p>
+    <p id="two">A second stable paragraph with enough readable content.</p></main></body>`);
+  const extraction = await evaluate(page); const p = extraction.paragraphs[0];
+  assert.equal((await evaluate(page, { op: 'resolve', index: p.index, textHash: p.textHash })).status, 'resolved');
+  assert.equal((await evaluate(page, { op: 'resolve', index: p.index, textHash: 'deadbeef' })).status, 'hash_mismatch');
+  assert.equal((await evaluate(page, { op: 'resolve', index: 9999, textHash: p.textHash })).status, 'index_not_found');
+  assert.equal((await evaluate(page, { sessionToken: 'another-session', op: 'resolve', index: p.index, textHash: p.textHash })).status, 'stale_session');
+  assert.equal((await evaluate(page, { documentToken: 'another-document', op: 'resolve', index: p.index, textHash: p.textHash })).status, 'wrong_document');
+  assert.equal((await evaluate(page, { navGeneration: 13, op: 'resolve', index: p.index, textHash: p.textHash })).status, 'wrong_document');
+  await page.evaluate(() => { document.querySelector('#one').textContent = 'Page changed this paragraph after extraction.'; });
+  const changed = await evaluate(page, { op: 'replace', paragraphs: [{ index: p.index, textHash: p.textHash, translatedText: 'translated' }] });
+  assert.equal(changed.results[0].status, 'text_changed');
+  await page.evaluate(() => document.querySelector('#two').remove());
+  const p2 = extraction.paragraphs[1];
+  const removed = await evaluate(page, { op: 'replace', paragraphs: [{ index: p2.index, textHash: p2.textHash, translatedText: 'translated' }] });
+  assert.equal(removed.results[0].status, 'node_disconnected');
+  await page.close();
+});
+
+await test('replacement preserves exact source, is idempotent, and restore is exact', async () => {
+  const original = '  Original paragraph has   odd spacing and enough readable text.  ';
+  const page = await fresh(`<!doctype html><body><main><p id="target">${original}</p></main></body>`);
+  const extraction = await evaluate(page); const p = extraction.paragraphs[0];
+  const request = { op: 'replace', paragraphs: [{ index: p.index, textHash: p.textHash, translatedText: 'ဘာသာပြန်ထားသော စာသား' }] };
+  const applied = await evaluate(page, request);
+  assert.equal(applied.results[0].status, 'translated');
+  assert.equal(await page.locator('#target').textContent(), 'ဘာသာပြန်ထားသော စာသား');
+  assert.equal((await evaluate(page, request)).results[0].status, 'already_translated');
+  const restored = await evaluate(page, { op: 'restore' });
+  assert.equal(restored.results[0].status, 'restored');
+  assert.equal(await page.locator('#target').textContent(), original);
+  assert.equal((await evaluate(page, { op: 'restore' })).results[0].status, 'restored');
+  await page.close();
+});
+
+await test('rejects a second replacement after source text is modified', async () => {
+  const page = await fresh(`<!doctype html><body><main><p id="target">Original source paragraph remains long enough to be anchored safely.</p></main></body>`);
+  const r = await evaluate(page); const p = r.paragraphs[0];
+  await evaluate(page, { op: 'replace', paragraphs: [{ index: p.index, textHash: p.textHash, translatedText: 'translated' }] });
+  await page.evaluate(() => { document.querySelector('#target').textContent = 'External page script changed the text.'; });
+  assert.equal((await evaluate(page, { op: 'restore' })).results[0].status, 'text_changed');
+  await page.close();
+});
+
+await test('observer cleanup is bounded and leaves the document available for restoration', async () => {
+  const page = await fresh(`<!doctype html><body><main><p>A paragraph with sufficient content to initialize the observer.</p></main></body>`);
+  const r = await evaluate(page); assert.equal(r.observer.active, true);
+  assert.equal((await evaluate(page, { op: 'cleanup' })).status, 'cleaned');
+  const again = await evaluate(page, { op: 'resolve', index: r.paragraphs[0].index, textHash: r.paragraphs[0].textHash });
+  assert.equal(again.status, 'resolved');
+  await page.close();
+});
+
+await test('replacement preserves scroll position while paragraph height changes', async () => {
+  const text = 'A long paragraph used to create vertical space on the page. '.repeat(20);
+  const html = `<!doctype html><body><main>${Array.from({ length: 24 }, (_, i) => `<p id="p${i}">${text} ${i}</p>`).join('')}</main></body>`;
+  const page = await fresh(html);
+  const extraction = await evaluate(page);
+  await page.evaluate(() => window.scrollTo(0, 650));
+  const before = await page.evaluate(() => window.scrollY);
+  const target = extraction.paragraphs[0];
+  await evaluate(page, { op: 'replace', paragraphs: [{ index: target.index, textHash: target.textHash, translatedText: 'Short translation.' }] });
+  await page.waitForTimeout(40);
+  const after = await page.evaluate(() => window.scrollY);
+  assert.ok(Math.abs(after - before) <= 2, `scroll moved from ${before} to ${after}`);
+  await page.close();
+});
+
+await test('paragraph and total-output resource limits report truncation', async () => {
+  const paragraphs = Array.from({ length: 430 }, (_, i) => `<p>Paragraph ${i} carries enough unique text for the bounded extraction registry.</p>`).join('');
+  const page = await fresh(`<!doctype html><body><main><article>${paragraphs}</article></main></body>`);
+  const r = await evaluate(page);
+  assert.equal(r.paragraphs.length, 400);
+  assert.equal(r.truncation.truncated, true);
+  await page.close();
 });
 
 await browser.close();
-for (const [s, n] of results) console.log(s, n);
-const failed = results.filter(r => r[0] === 'FAIL').length;
-console.log(`${results.length - failed}/${results.length} passed`);
+for (const [status, name] of passed) console.log(`${status} ${name}`);
+const failed = passed.filter(([status]) => status === 'FAIL').length;
+console.log(`${passed.length - failed}/${passed.length} passed`);
 process.exit(failed ? 1 : 0);

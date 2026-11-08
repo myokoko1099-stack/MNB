@@ -27,13 +27,17 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.mnb.browser.error.ErrorHandler
-import com.mnb.browser.extraction.ExtractionScript
+import com.mnb.browser.extraction.DomReaderScript
+import com.mnb.browser.extraction.ExtractedContent
+import com.mnb.browser.extraction.ExtractedParagraph
 import com.mnb.browser.navigation.UrlPolicy
 import com.mnb.browser.readermode.PageSession
 import com.mnb.browser.readermode.PageSessionManager
 import com.mnb.browser.readermode.ReaderModeController
 import com.mnb.browser.state.BrowserError
 import com.mnb.browser.state.BrowserStateManager
+import org.json.JSONArray
+import org.json.JSONObject
 import java.util.concurrent.Executor
 import java.util.concurrent.RejectedExecutionException
 
@@ -104,6 +108,9 @@ class WebViewController(
     /** Called when a tab stops being active so page-scoped foreground work can be invalidated. */
     var tabDeactivatedListener: ((tabId: String) -> Unit)? = null
 
+    /** Called after a tab's document identity changes or is discarded. */
+    var pageSessionChangedListener: ((tabId: String, session: PageSession?) -> Unit)? = null
+
     private val views = HashMap<String, WebView>()
     private val stores = HashMap<String, WebSessionStore>()
     private var activeId: String? = null
@@ -149,6 +156,7 @@ class WebViewController(
         views.remove(tabId)?.let { destroyView(it) }
         pageSessionManager.closeTab(tabId)
         readerModeController.closeTab(tabId)
+        pageSessionChangedListener?.invoke(tabId, null)
         if (activeId == tabId) activeId = null
         stores.remove(tabId)
         failedLoads.remove(tabId)
@@ -188,8 +196,78 @@ class WebViewController(
      * JSON text (or null on timeout) and the page URL, always on the main thread, exactly once.
      * Returns false when there is no WebView to run it in.
      */
-    fun runExtraction(onResult: (rawJson: String?, url: String?) -> Unit): Boolean {
-        val view = activeView() ?: return false
+    fun runExtraction(
+        session: PageSession,
+        sessionToken: String,
+        onResult: (rawJson: String?, url: String?) -> Unit,
+    ): Boolean = evaluateDom(
+        session,
+        JSONObject().put("op", "extract").put("sessionToken", sessionToken)
+            .put("documentToken", session.documentToken).put("tabId", session.tabId)
+            .put("navGeneration", session.navGeneration),
+        onResult,
+    )
+
+    /** Replace only matching anchors from this extracted document. Each request is independently validated in JS. */
+    fun replaceInPage(
+        session: PageSession,
+        content: ExtractedContent,
+        translations: List<Pair<ExtractedParagraph, String>>,
+        onResult: (rawJson: String?) -> Unit,
+    ): Boolean {
+        if (!contentMatches(session, content) || translations.size > MAX_DOM_PARAGRAPHS) return false
+        val paragraphs = JSONArray()
+        translations.forEach { (paragraph, translated) ->
+            if (paragraph.index >= 0 && paragraph.textHash.isNotBlank() && translated.isNotBlank()) {
+                paragraphs.put(JSONObject().put("index", paragraph.index).put("textHash", paragraph.textHash)
+                    .put("translatedText", translated))
+            }
+        }
+        val payload = JSONObject().put("op", "replace").put("sessionToken", content.sessionToken)
+            .put("documentToken", content.documentToken).put("tabId", session.tabId)
+            .put("navGeneration", session.navGeneration).put("paragraphs", paragraphs)
+        return evaluateDom(session, payload) { raw, _ -> onResult(raw) }
+    }
+
+    /** Restore the exact captured original text for every currently translated anchor. */
+    fun restoreInPage(
+        session: PageSession,
+        content: ExtractedContent,
+        onResult: (rawJson: String?) -> Unit,
+    ): Boolean {
+        if (!contentMatches(session, content)) return false
+        val payload = JSONObject().put("op", "restore").put("sessionToken", content.sessionToken)
+            .put("documentToken", content.documentToken).put("tabId", session.tabId)
+            .put("navGeneration", session.navGeneration)
+        return evaluateDom(session, payload) { raw, _ -> onResult(raw) }
+    }
+
+    /** Stop observing dynamic changes when the foreground reader operation ends; anchors stay available for restore. */
+    fun cleanupDomObserver(session: PageSession, content: ExtractedContent) {
+        if (!contentMatches(session, content)) return
+        cleanupDomObserver(session, content.sessionToken)
+    }
+
+    fun cleanupDomObserver(session: PageSession, sessionToken: String) {
+        if (sessionToken.isBlank() || !isCurrentPageSession(session.tabId, session)) return
+        val payload = JSONObject().put("op", "cleanup").put("sessionToken", sessionToken)
+            .put("documentToken", session.documentToken).put("tabId", session.tabId)
+            .put("navGeneration", session.navGeneration)
+        evaluateDom(session, payload) { _, _ -> }
+    }
+
+    private fun contentMatches(session: PageSession, content: ExtractedContent): Boolean =
+        content.sessionToken.isNotBlank() && content.documentToken == session.documentToken &&
+            content.tabId == session.tabId && content.navGeneration == session.navGeneration &&
+            isCurrentPageSession(session.tabId, session)
+
+    private fun evaluateDom(
+        session: PageSession,
+        payload: JSONObject,
+        onResult: (rawJson: String?, url: String?) -> Unit,
+    ): Boolean {
+        val view = views[session.tabId] ?: return false
+        if (activeId != session.tabId || !isCurrentPageSession(session.tabId, session)) return false
         var delivered = false
         val timeout = Runnable {
             if (!delivered) {
@@ -198,11 +276,18 @@ class WebViewController(
             }
         }
         view.postDelayed(timeout, EXTRACTION_TIMEOUT_MS)
-        view.evaluateJavascript(ExtractionScript.SOURCE) { raw ->
-            if (!delivered) {
+        try {
+            view.evaluateJavascript(DomReaderScript.invoke(payload.toString())) { raw ->
+                if (delivered) return@evaluateJavascript
                 delivered = true
                 view.removeCallbacks(timeout)
                 onResult(raw, view.url)
+            }
+        } catch (_: Exception) {
+            if (!delivered) {
+                delivered = true
+                view.removeCallbacks(timeout)
+                onResult(null, view.url)
             }
         }
         return true
@@ -278,6 +363,7 @@ class WebViewController(
         }
         pageSessionManager.onWebViewUnloaded(tabId)
         readerModeController.onPageSessionChanged(tabId, null)
+        pageSessionChangedListener?.invoke(tabId, null)
         destroyView(view)
     }
 
@@ -292,6 +378,7 @@ class WebViewController(
         val pageUrl = try { view.url } catch (e: Exception) { null }
         pageSessionManager.onRendererCrashed(tabId)
         readerModeController.onPageSessionChanged(tabId, null)
+        pageSessionChangedListener?.invoke(tabId, null)
         views.remove(tabId)
         useOrder.remove(tabId)
         failedLoads.remove(tabId)
@@ -468,6 +555,7 @@ class WebViewController(
             failedLoads.remove(tabId)
             val session = pageSessionManager.onPageStarted(tabId, url)
             readerModeController.onPageSessionChanged(tabId, session)
+            pageSessionChangedListener?.invoke(tabId, session)
             if (isActive()) stateManager.onPageStarted(url)
         }
 
@@ -476,6 +564,7 @@ class WebViewController(
             val haltNotice = haltedTabs.remove(tabId)
             val session = pageSessionManager.onPageFinished(tabId, view.url ?: url)
             readerModeController.onPageSessionChanged(tabId, session)
+            pageSessionChangedListener?.invoke(tabId, session)
             if (isActive()) {
                 stateManager.onPageFinished(url)
                 stateManager.onHistoryChanged(url, view.canGoBack(), view.canGoForward())
@@ -488,6 +577,7 @@ class WebViewController(
         override fun doUpdateVisitedHistory(view: WebView, url: String?, isReload: Boolean) {
             val session = pageSessionManager.onHistoryUpdated(tabId, url, isReload)
             readerModeController.onPageSessionChanged(tabId, session)
+            pageSessionChangedListener?.invoke(tabId, session)
             if (isActive()) stateManager.onHistoryChanged(url, view.canGoBack(), view.canGoForward())
             pageListener?.invoke(tabId, UrlPolicy.reportedAddress(url), null)
         }
@@ -549,5 +639,6 @@ class WebViewController(
 
     private companion object {
         const val EXTRACTION_TIMEOUT_MS = 15_000L
+        const val MAX_DOM_PARAGRAPHS = 400
     }
 }

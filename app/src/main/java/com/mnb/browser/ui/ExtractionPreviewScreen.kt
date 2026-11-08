@@ -41,6 +41,8 @@ fun ExtractionPreviewScreen(
     onClose: () -> Unit,
     onRetry: () -> Unit,
     onRead: (ExtractedContent) -> Unit,
+    onTranslateInPage: (ExtractedContent) -> Unit,
+    onRestoreInPage: (ExtractedContent) -> Unit,
 ) {
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Column(Modifier.fillMaxSize()) {
@@ -55,6 +57,16 @@ fun ExtractionPreviewScreen(
                     if (state is ExtractionState.Success) {
                         TextButton(onClick = { onRead(state.content) }) { Text("Read") }
                     }
+                }
+            }
+            if (state is ExtractionState.Success && state.content.sessionToken.isNotBlank() && state.content.documentToken.isNotBlank()) {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    TextButton(onClick = { onTranslateInPage(state.content) }) { Text("Translate on page") }
+                    TextButton(onClick = { onRestoreInPage(state.content) }) { Text("Original") }
                 }
             }
             when (state) {

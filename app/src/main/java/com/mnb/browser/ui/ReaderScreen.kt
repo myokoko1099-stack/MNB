@@ -54,8 +54,10 @@ import com.mnb.browser.reader.ReaderTheme
 import com.mnb.browser.reader.translation.LocalReaderTranslationActions
 import com.mnb.browser.reader.translation.ReaderChapterTranslation
 import com.mnb.browser.reader.translation.ReaderTranslationDisplay
+import com.mnb.browser.reader.translation.ReaderTranslationState
 import com.mnb.browser.reader.translation.ReaderViewMode
 import com.mnb.browser.reader.translation.canRequestTranslation
+import com.mnb.browser.translation.chunking.ParagraphSplitter
 import kotlin.math.roundToInt
 
 /**
@@ -81,6 +83,8 @@ fun ReaderScreen(
     settingsRepository: ReaderSettingsRepository,
     onClose: () -> Unit,
     translation: ReaderChapterTranslation? = null,
+    onApplyToPage: (ExtractedContent, List<Pair<ExtractedParagraph, String>>) -> Unit = { _, _ -> },
+    onRestorePage: (ExtractedContent) -> Unit = {},
 ) {
     val itemCount = content.paragraphs.size + 1
     val saved = remember(content.url, itemCount) { positions.load(content.url, itemCount) }
@@ -118,6 +122,17 @@ fun ReaderScreen(
     val canRequestTranslation = translationActions != null &&
         translation?.identity != null &&
         translation.state.canRequestTranslation
+
+    // Reuse the current translation pipeline. Apply only when its paragraph boundaries align exactly
+    // with the extracted anchors; never guess an index mapping for a malformed or reflowed result.
+    LaunchedEffect(content.sessionToken, translation?.state) {
+        val completed = translation?.state as? ReaderTranslationState.Completed ?: return@LaunchedEffect
+        if (content.sessionToken.isBlank() || content.documentToken.isBlank()) return@LaunchedEffect
+        val translated = ParagraphSplitter.split(completed.translatedText)
+        if (translated.size != content.paragraphs.size) return@LaunchedEffect
+        if (content.paragraphs.any { it.index < 0 || it.textHash.isBlank() }) return@LaunchedEffect
+        onApplyToPage(content, content.paragraphs.zip(translated))
+    }
 
     val progress by remember(activeListState) {
         derivedStateOf {
@@ -170,6 +185,9 @@ fun ReaderScreen(
                                 TextButton(onClick = { translationActions?.requestTranslation(content) }) {
                                     Text("ဘာသာပြန်")
                                 }
+                            }
+                            if (content.sessionToken.isNotBlank() && content.documentToken.isNotBlank()) {
+                                TextButton(onClick = { onRestorePage(content) }) { Text("မူရင်းစာ") }
                             }
                             TextButton(onClick = { showSettings = !showSettings }) { Text("Aa") }
                         }
