@@ -12,6 +12,8 @@ enum class SettingsSection(val title: String) {
     TranslationSettings("Translation Settings"),
     TranslationProvider("Translation Provider"),
     GeminiConfiguration("Gemini Configuration"),
+    ReaderPreferences("Reader Preferences"),
+    BrowserPreferences("Browser Preferences"),
     TranslationBehavior("Translation Behavior"),
     About("About MNB"),
 }
@@ -39,6 +41,11 @@ object SettingsScreenText {
     const val PLACEHOLDER_BADGE = "Not available yet"
     const val GEMINI_PLACEHOLDER =
         "Gemini API key and model options will be managed here in a later update."
+    const val GEMINI_UNAVAILABLE = "Gemini key settings are unavailable in this host."
+    const val BROWSER_PREFS_NOTE =
+        "Browser shortcut data remains in UiPreferences. Safe Mode only changes selected shortcut groups when that feature is implemented."
+    const val SAFE_MODE_UNAVAILABLE =
+        "Safe Mode and user-defined shortcut groups are not implemented yet. No content-unlocking behavior is provided."
     const val BEHAVIOR_PLACEHOLDER =
         "Options for how chapters are translated will appear here in a later update."
 

@@ -10,13 +10,15 @@ import org.junit.Test
 class SettingsScreenTextTest {
 
     @Test
-    fun sections_areTheSixRequiredOnesInOrder() {
+    fun sections_areTheConsolidatedRequiredOnesInOrder() {
         assertEquals(
             listOf(
                 "General Settings",
                 "Translation Settings",
                 "Translation Provider",
                 "Gemini Configuration",
+                "Reader Preferences",
+                "Browser Preferences",
                 "Translation Behavior",
                 "About MNB",
             ),
