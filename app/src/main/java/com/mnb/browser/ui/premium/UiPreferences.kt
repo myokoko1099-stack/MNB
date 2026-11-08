@@ -33,7 +33,7 @@ class UiPreferences(context: Context) {
                 val obj = array.getJSONObject(i)
                 Shortcut(obj.getString("name"), obj.getString("url"))
             }
-            // Untouched list from an earlier version (DuckDuckGo/Wikipedia/GitHub): show the new defaults.
+            // Untouched list from an earlier version (see DefaultShortcuts.LEGACY_DEFAULTS): show the new defaults.
             if (DefaultShortcuts.isLegacyDefault(saved)) DEFAULT_SHORTCUTS else saved
         } catch (_: JSONException) {
             DEFAULT_SHORTCUTS
