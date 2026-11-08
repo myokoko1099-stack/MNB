@@ -28,7 +28,9 @@ android {
     kotlinOptions { jvmTarget = "17" }
     buildFeatures { compose = true }
     testOptions { unitTests.isIncludeAndroidResources = true }
-    // Phase 2G: the committed Room schema JSON files are test assets for MigrationTestHelper.
+    // R-00: MigrationTestHelper under Robolectric reads schema JSON from the target app assets.
+    // Keep the canonical files in app/schemas and expose that directory without duplicating them.
+    sourceSets["main"].assets.srcDir("$projectDir/schemas")
     sourceSets["test"].assets.srcDir("$projectDir/schemas")
     composeOptions { kotlinCompilerExtensionVersion = "1.5.14" }
     packaging { resources.excludes += "/META-INF/{AL2.0,LGPL2.1}" }

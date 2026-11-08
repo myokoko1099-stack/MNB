@@ -12,5 +12,10 @@ jobs:
       - run: gradle :app:testDebugUnitTest :app:assembleDebug
       - uses: actions/upload-artifact@v4
         with:
+          name: mnb-room-schemas
+          path: app/schemas/**/*.json
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
           name: mnb-debug-apk
           path: app/build/outputs/apk/debug/*.apk

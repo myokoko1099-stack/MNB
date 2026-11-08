@@ -6,43 +6,26 @@ import androidx.room.testing.MigrationTestHelper
 import androidx.sqlite.db.SupportSQLiteDatabase
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.platform.app.InstrumentationRegistry
-import java.io.IOException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
-import org.junit.Assume.assumeTrue
-import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
-import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 
 /**
  * Migration 3 -> 4 checked against the exported Room schema JSON with [MigrationTestHelper]: the
  * migrated database must match the version 4 schema exactly.
  *
- * It needs app/schemas/<database class>/3.json and 4.json. Room writes 4.json by itself when the app is
- * built; 3.json is made from it with tools/derive-v3-schema.py (see PHASE-2G-REPORT.md). Until both are
- * committed this test is SKIPPED (not passed): check the test report for skipped tests.
+ * It needs the committed app/schemas/<database class>/3.json and 4.json assets. Version 4 is generated
+ * by Room in CI and version 3 is derived mechanically from that exact export with tools/derive-v3-schema.py.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class MnbSchemaMigrationTest {
     @get:Rule
     val helper = MigrationTestHelper(InstrumentationRegistry.getInstrumentation(), MnbDatabase::class.java)
-
-    @Before fun requireTheSchemaFiles() {
-        assumeTrue("schema JSON for version 3 is not committed yet", schemaAssetExists(3))
-        assumeTrue("schema JSON for version 4 is not committed yet", schemaAssetExists(4))
-    }
-
-    private fun schemaAssetExists(version: Int): Boolean = try {
-        RuntimeEnvironment.getApplication().assets.open("$SCHEMA_DIR/$version.json").close()
-        true
-    } catch (e: IOException) {
-        false
-    }
 
     private fun tableNames(db: SupportSQLiteDatabase): Set<String> {
         val names = mutableSetOf<String>()
@@ -81,6 +64,5 @@ class MnbSchemaMigrationTest {
 
     private companion object {
         const val DB = "mnb-migration-test"
-        val SCHEMA_DIR: String = MnbDatabase::class.java.canonicalName!!
     }
 }
