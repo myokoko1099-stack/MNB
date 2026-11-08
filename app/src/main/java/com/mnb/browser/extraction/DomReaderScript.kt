@@ -100,7 +100,11 @@ internal object DomReaderScript {
   }
   function collect(root) {
     var selectors = 'p,h1,h2,h3,h4,h5,h6,blockquote,pre,li,div';
-    var list = root.querySelectorAll(selectors), out = [], seenLong = new Set(), total = 0, limited = false, lastText = null;
+    var list = [];
+    if (root.nodeType === 1 && /^(P|H[1-6]|BLOCKQUOTE|PRE|LI|DIV)$/.test(root.tagName)) list.push(root);
+    var descendants = root.querySelectorAll(selectors);
+    for (var di = 0; di < descendants.length; di++) list.push(descendants[di]);
+    var out = [], seenLong = new Set(), total = 0, limited = false, lastText = null;
     var limit = Math.min(list.length, MAX_NODES);
     function add(node, text, heading, kind, minLength) {
       text = normalize(text);
