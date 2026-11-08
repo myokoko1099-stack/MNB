@@ -77,6 +77,88 @@ class PageSessionManagerTest {
     }
 
     @Test
+    fun reloadThenSameUrlHistoryCallbackKeepsSingleTransition() {
+        val manager = manager()
+        manager.onPageStarted("tab-a", "https://example.test/story")
+        manager.onPageFinished("tab-a", "https://example.test/story")
+
+        val started = manager.onPageStarted("tab-a", "https://example.test/story")
+        val history = manager.onHistoryUpdated("tab-a", "https://example.test/story", true)
+        val finished = manager.onPageFinished("tab-a", "https://example.test/story")
+
+        assertTrue(started.sameDocumentAs(history))
+        assertTrue(started.sameDocumentAs(finished))
+        assertEquals(2L, finished.navGeneration)
+    }
+
+    @Test
+    fun reloadThenRedirectedHistoryCallbackKeepsIdentityAndUpdatesFinalUrl() {
+        val manager = manager()
+        manager.onPageStarted("tab-a", "https://example.test/start")
+        manager.onPageFinished("tab-a", "https://example.test/start")
+
+        val started = manager.onPageStarted("tab-a", "https://example.test/start")
+        val redirected = manager.onHistoryUpdated("tab-a", "https://example.test/final", true)
+        val finished = manager.onPageFinished("tab-a", "https://example.test/final")
+
+        assertTrue(started.sameDocumentAs(redirected))
+        assertTrue(started.sameDocumentAs(finished))
+        assertEquals(2L, finished.navGeneration)
+        assertEquals("https://example.test/final", finished.normalizedUrl)
+    }
+
+    @Test
+    fun reloadWithMultipleRedirectCallbacksAdvancesGenerationOnlyOnce() {
+        val manager = manager()
+        manager.onPageStarted("tab-a", "https://example.test/start")
+        manager.onPageFinished("tab-a", "https://example.test/start")
+
+        val started = manager.onPageStarted("tab-a", "https://example.test/start")
+        val redirect1 = manager.onHistoryUpdated("tab-a", "https://redirect.test/one", true)
+        val redirect2 = manager.onHistoryUpdated("tab-a", "https://redirect.test/two", true)
+        val finalUrl = manager.onHistoryUpdated("tab-a", "https://final.test/story", true)
+        val finished = manager.onPageFinished("tab-a", "https://final.test/story")
+
+        listOf(redirect1, redirect2, finalUrl, finished).forEach { assertTrue(started.sameDocumentAs(it)) }
+        assertEquals(2L, finished.navGeneration)
+        assertEquals("https://final.test/story", finished.normalizedUrl)
+    }
+
+    @Test
+    fun normalNavigationRedirectChainCreatesOneNewDocument() {
+        val manager = manager()
+        manager.onPageStarted("tab-a", "https://example.test/old")
+        manager.onPageFinished("tab-a", "https://example.test/old")
+
+        val started = manager.onPageStarted("tab-a", "https://example.test/start")
+        val redirectStart = manager.onPageStarted("tab-a", "https://redirect.test/middle")
+        val history = manager.onHistoryUpdated("tab-a", "https://final.test/story", false)
+        val finished = manager.onPageFinished("tab-a", "https://final.test/story")
+
+        assertEquals(2L, started.navGeneration)
+        assertTrue(started.sameDocumentAs(redirectStart))
+        assertTrue(started.sameDocumentAs(history))
+        assertTrue(started.sameDocumentAs(finished))
+        assertEquals("https://final.test/story", finished.normalizedUrl)
+    }
+
+    @Test
+    fun reloadHistoryBeforePageStartedStillProducesOneTransitionAcrossRedirect() {
+        val manager = manager()
+        manager.onPageStarted("tab-a", "https://example.test/story")
+        manager.onPageFinished("tab-a", "https://example.test/story")
+
+        val history = manager.onHistoryUpdated("tab-a", "https://redirect.test/start", true)
+        val started = manager.onPageStarted("tab-a", "https://final.test/story")
+        val finished = manager.onPageFinished("tab-a", "https://final.test/story")
+
+        assertTrue(history.sameDocumentAs(started))
+        assertTrue(started.sameDocumentAs(finished))
+        assertEquals(2L, finished.navGeneration)
+        assertEquals("https://final.test/story", finished.normalizedUrl)
+    }
+
+    @Test
     fun repeatedReloadHistoryAndFinishedCallbacksAreIdempotent() {
         val manager = manager()
         val started = manager.onPageStarted("tab-a", "https://example.test/story")
@@ -89,7 +171,21 @@ class PageSessionManagerTest {
         assertTrue(started.sameDocumentAs(history2))
         assertTrue(started.sameDocumentAs(finished1))
         assertTrue(started.sameDocumentAs(finished2))
+        assertEquals(finished1, finished2)
         assertEquals(1L, finished2.navGeneration)
+    }
+
+    @Test
+    fun spaSameDocumentAndFragmentUpdatesPreserveIdentityIndependently() {
+        val manager = manager()
+        val initial = manager.onPageStarted("tab-a", "https://example.test/story")
+        val spa = manager.onHistoryUpdated("tab-a", "https://example.test/story/part-2", false)
+        val fragment = manager.onHistoryUpdated("tab-a", "https://example.test/story/part-2#section", false)
+
+        assertTrue(initial.sameDocumentAs(spa))
+        assertTrue(spa.sameDocumentAs(fragment))
+        assertEquals("https://example.test/story/part-2#section", fragment.normalizedUrl)
+        assertEquals(1L, fragment.navGeneration)
     }
 
     @Test

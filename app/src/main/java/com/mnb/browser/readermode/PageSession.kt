@@ -19,89 +19,106 @@ data class PageSession(
 }
 
 /**
- * Tracks page identity independently for every tab. Page-start/reload/recreate events create a new
- * document; history updates without a reload only update the URL and preserve the document token.
+ * Tracks one identity per main-frame document load, independently for every tab. A start callback
+ * creates the identity; further start/history callbacks before the matching finish update its URL
+ * without creating another identity. This also covers reload callbacks whose URL changes on redirect.
  */
 class PageSessionManager(
     private val newDocumentToken: () -> String = { UUID.randomUUID().toString() },
 ) {
+    private data class LoadState(var inProgress: Boolean = false)
+
     private val sessions = LinkedHashMap<String, PageSession>()
     private val generations = HashMap<String, Long>()
-    /** WebView commonly reports a reload in history callbacks after onPageStarted. */
-    private val startedReloads = HashMap<String, String>()
+    private val loads = HashMap<String, LoadState>()
 
     @Synchronized
     fun current(tabId: String): PageSession? = sessions[tabId]
 
-    /** A main-frame page start always begins a new document, including same-URL reloads. */
+    /** A top-level load starts a new document unless it is another start in the active redirect chain. */
     @Synchronized
     fun onPageStarted(tabId: String, url: String?): PageSession {
-        val normalized = normalizeUrl(url)
-        startedReloads[tabId] = normalized
-        return beginNewDocument(tabId, url)
+        val load = loads.getOrPut(tabId) { LoadState() }
+        val existing = sessions[tabId]
+        val session = if (load.inProgress && existing != null) {
+            updateUrl(existing, url)
+        } else {
+            beginNewDocument(tabId, url)
+        }
+        load.inProgress = true
+        return session
     }
 
-    /** A reload is a new document even if the URL is unchanged. */
+    /** Explicit reload signal used by callers that initiate reload outside WebView callbacks. */
     @Synchronized
     fun onReload(tabId: String, url: String?): PageSession {
-        startedReloads.remove(tabId)
-        return beginNewDocument(tabId, url)
+        val session = beginNewDocument(tabId, url)
+        loads.getOrPut(tabId) { LoadState() }.inProgress = true
+        return session
     }
 
-    /** A normal history callback without reload is same-document until page-start says otherwise. */
+    /**
+     * History callbacks are URL updates within a document. A reload callback creates a document
+     * only when no main-frame load is already in progress; thus either callback ordering is safe,
+     * and redirected URLs do not cause another generation.
+     */
     @Synchronized
     fun onHistoryUpdated(tabId: String, url: String?, isReload: Boolean): PageSession {
-        if (isReload) {
-            val normalized = normalizeUrl(url)
-            // Android WebView may emit onPageStarted followed by doUpdateVisitedHistory(true)
-            // for the *same* reload. The page-start already established its new identity.
-            if (startedReloads[tabId] == normalized && sessions[tabId]?.normalizedUrl == normalized) {
-                return sessions.getValue(tabId)
-            }
-            startedReloads.remove(tabId)
-            return beginNewDocument(tabId, url)
-        }
         val existing = sessions[tabId]
-        if (existing == null) return beginNewDocument(tabId, url)
-        val updated = existing.copy(normalizedUrl = normalizeUrl(url))
-        sessions[tabId] = updated
-        return updated
+        val load = loads.getOrPut(tabId) { LoadState() }
+        if (isReload && !load.inProgress) {
+            val session = beginNewDocument(tabId, url)
+            load.inProgress = true
+            return session
+        }
+        if (existing == null) {
+            val session = beginNewDocument(tabId, url)
+            load.inProgress = true
+            return session
+        }
+        return updateUrl(existing, url)
     }
 
-    /** Duplicate page-finished callbacks must not create another document identity. */
+    /** Finishing a load records the final URL and closes the callback window; duplicate finishes are idempotent. */
     @Synchronized
     fun onPageFinished(tabId: String, url: String?): PageSession {
-        startedReloads.remove(tabId)
         val existing = sessions[tabId]
-        if (existing != null) return existing
-        return beginNewDocument(tabId, url)
+        val load = loads.remove(tabId)
+        if (existing == null) return beginNewDocument(tabId, url)
+        // Repeated finish callbacks are not new transitions and must not roll a final URL backward.
+        return if (load != null) updateUrl(existing, url) else existing
     }
 
     /** A destroyed/unloaded WebView invalidates all work for that document. */
     @Synchronized
     fun onWebViewUnloaded(tabId: String) {
         sessions.remove(tabId)
+        loads.remove(tabId)
     }
 
     /** Renderer loss invalidates the old document before WebView recreation. */
     @Synchronized
     fun onRendererCrashed(tabId: String) {
         sessions.remove(tabId)
+        loads.remove(tabId)
     }
 
     @Synchronized
     fun closeTab(tabId: String) {
         sessions.remove(tabId)
         generations.remove(tabId)
-        startedReloads.remove(tabId)
+        loads.remove(tabId)
     }
 
     @Synchronized
     fun clear() {
         sessions.clear()
         generations.clear()
-        startedReloads.clear()
+        loads.clear()
     }
+
+    private fun updateUrl(existing: PageSession, url: String?): PageSession =
+        existing.copy(normalizedUrl = normalizeUrl(url)).also { sessions[existing.tabId] = it }
 
     private fun beginNewDocument(tabId: String, url: String?): PageSession {
         val generation = (generations[tabId] ?: 0L) + 1L
