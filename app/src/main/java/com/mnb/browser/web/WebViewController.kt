@@ -446,9 +446,17 @@ class WebViewController(
 
         override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
             val url = request.url.toString()
+            val isMainFrameRedirect = request.isForMainFrame && request.isRedirect
             return when (val decision = UrlPolicy.checkNavigation(url)) {
-                UrlPolicy.Decision.Allow -> false
-                is UrlPolicy.Decision.Upgrade -> { view.loadUrl(decision.url); true }
+                UrlPolicy.Decision.Allow -> {
+                    if (isMainFrameRedirect) pageSessionManager.onRedirectRequested(tabId, url)
+                    false
+                }
+                is UrlPolicy.Decision.Upgrade -> {
+                    if (isMainFrameRedirect) pageSessionManager.onRedirectRequested(tabId, decision.url)
+                    view.loadUrl(decision.url)
+                    true
+                }
                 UrlPolicy.Decision.Block -> {
                     if (isActive()) stateManager.onError(ErrorHandler.blocked(url))
                     true

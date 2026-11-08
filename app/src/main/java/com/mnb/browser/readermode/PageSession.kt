@@ -19,14 +19,17 @@ data class PageSession(
 }
 
 /**
- * Tracks one identity per main-frame document load, independently for every tab. A start callback
- * creates the identity; further start/history callbacks before the matching finish update its URL
- * without creating another identity. This also covers reload callbacks whose URL changes on redirect.
+ * Tracks one identity per main-frame document load, independently for every tab. WebView's explicit
+ * server-redirect signal identifies redirect starts; reload history callbacks coalesce with an
+ * in-flight document even when the callback URL differs because of a redirect.
  */
 class PageSessionManager(
     private val newDocumentToken: () -> String = { UUID.randomUUID().toString() },
 ) {
-    private data class LoadState(var inProgress: Boolean = false)
+    private data class LoadState(
+        var inProgress: Boolean = false,
+        var redirectTarget: String? = null,
+    )
 
     private val sessions = LinkedHashMap<String, PageSession>()
     private val generations = HashMap<String, Long>()
@@ -35,25 +38,34 @@ class PageSessionManager(
     @Synchronized
     fun current(tabId: String): PageSession? = sessions[tabId]
 
-    /** A top-level load starts a new document unless it is another start in the active redirect chain. */
+    /** A top-level start is a new document unless WebView identified it as an HTTP redirect. */
     @Synchronized
     fun onPageStarted(tabId: String, url: String?): PageSession {
         val load = loads.getOrPut(tabId) { LoadState() }
         val existing = sessions[tabId]
-        val session = if (load.inProgress && existing != null) {
+        val isRedirect = load.inProgress && load.redirectTarget == normalizeUrl(url)
+        val session = if (isRedirect && existing != null) {
             updateUrl(existing, url)
         } else {
             beginNewDocument(tabId, url)
         }
         load.inProgress = true
+        load.redirectTarget = null
         return session
+    }
+
+    /** Records a main-frame redirect target; unrelated or subframe requests must not call this. */
+    @Synchronized
+    fun onRedirectRequested(tabId: String, url: String?) {
+        val load = loads[tabId] ?: return
+        if (load.inProgress) load.redirectTarget = normalizeUrl(url)
     }
 
     /** Explicit reload signal used by callers that initiate reload outside WebView callbacks. */
     @Synchronized
     fun onReload(tabId: String, url: String?): PageSession {
         val session = beginNewDocument(tabId, url)
-        loads.getOrPut(tabId) { LoadState() }.inProgress = true
+        loads.getOrPut(tabId) { LoadState() }.apply { inProgress = true; redirectTarget = null }
         return session
     }
 
@@ -68,12 +80,12 @@ class PageSessionManager(
         val load = loads.getOrPut(tabId) { LoadState() }
         if (isReload && !load.inProgress) {
             val session = beginNewDocument(tabId, url)
-            load.inProgress = true
+            load.apply { inProgress = true; redirectTarget = null }
             return session
         }
         if (existing == null) {
             val session = beginNewDocument(tabId, url)
-            load.inProgress = true
+            load.apply { inProgress = true; redirectTarget = null }
             return session
         }
         return updateUrl(existing, url)

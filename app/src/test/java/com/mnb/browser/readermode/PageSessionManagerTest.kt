@@ -98,9 +98,12 @@ class PageSessionManagerTest {
         manager.onPageFinished("tab-a", "https://example.test/start")
 
         val started = manager.onPageStarted("tab-a", "https://example.test/start")
+        manager.onRedirectRequested("tab-a", "https://example.test/final")
+        val redirectStart = manager.onPageStarted("tab-a", "https://example.test/final")
         val redirected = manager.onHistoryUpdated("tab-a", "https://example.test/final", true)
         val finished = manager.onPageFinished("tab-a", "https://example.test/final")
 
+        assertTrue(started.sameDocumentAs(redirectStart))
         assertTrue(started.sameDocumentAs(redirected))
         assertTrue(started.sameDocumentAs(finished))
         assertEquals(2L, finished.navGeneration)
@@ -131,12 +134,16 @@ class PageSessionManagerTest {
         manager.onPageFinished("tab-a", "https://example.test/old")
 
         val started = manager.onPageStarted("tab-a", "https://example.test/start")
+        manager.onRedirectRequested("tab-a", "https://redirect.test/middle")
         val redirectStart = manager.onPageStarted("tab-a", "https://redirect.test/middle")
+        manager.onRedirectRequested("tab-a", "https://final.test/story")
+        val finalStart = manager.onPageStarted("tab-a", "https://final.test/story")
         val history = manager.onHistoryUpdated("tab-a", "https://final.test/story", false)
         val finished = manager.onPageFinished("tab-a", "https://final.test/story")
 
         assertEquals(2L, started.navGeneration)
         assertTrue(started.sameDocumentAs(redirectStart))
+        assertTrue(started.sameDocumentAs(finalStart))
         assertTrue(started.sameDocumentAs(history))
         assertTrue(started.sameDocumentAs(finished))
         assertEquals("https://final.test/story", finished.normalizedUrl)
@@ -149,10 +156,13 @@ class PageSessionManagerTest {
         manager.onPageFinished("tab-a", "https://example.test/story")
 
         val history = manager.onHistoryUpdated("tab-a", "https://redirect.test/start", true)
+        manager.onRedirectRequested("tab-a", "https://final.test/story")
         val started = manager.onPageStarted("tab-a", "https://final.test/story")
+        val finalHistory = manager.onHistoryUpdated("tab-a", "https://final.test/story", true)
         val finished = manager.onPageFinished("tab-a", "https://final.test/story")
 
         assertTrue(history.sameDocumentAs(started))
+        assertTrue(started.sameDocumentAs(finalHistory))
         assertTrue(started.sameDocumentAs(finished))
         assertEquals(2L, finished.navGeneration)
         assertEquals("https://final.test/story", finished.normalizedUrl)
